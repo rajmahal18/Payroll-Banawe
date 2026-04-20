@@ -1,0 +1,164 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+}
+
+enum LedgerStatus {
+  OPEN
+  CLOSED
+  CANCELLED
+}
+
+enum DeductionType {
+  SHORTAGE
+  DAMAGE
+  LOAN
+  OTHER
+}
+
+enum PayrollFrequency {
+  DAILY
+  WEEKLY
+  TWICE_MONTHLY
+  MONTHLY
+}
+
+enum PayrollPeriodStatus {
+  DRAFT
+  FINALIZED
+  PAID
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Employee {
+  id                String             @id @default(cuid())
+  employeeCode      String             @unique
+  fullName          String
+  position          String?
+  dailyRate         Decimal            @db.Decimal(10, 2)
+  status            EmployeeStatus     @default(ACTIVE)
+  startDate         DateTime?
+  contactNumber     String?
+  notes             String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  attendanceRecords AttendanceRecord[]
+  advances          Advance[]
+  payables          Payable[]
+  payrollEntries    PayrollEntry[]
+}
+
+model AttendanceRecord {
+  id         String           @id @default(cuid())
+  employeeId String
+  date       DateTime
+  status     AttendanceStatus
+  remarks    String?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+  employee   Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, date])
+  @@index([date])
+}
+
+model Advance {
+  id               String       @id @default(cuid())
+  employeeId       String
+  date             DateTime
+  amount           Decimal      @db.Decimal(10, 2)
+  deductedAmount   Decimal      @default(0) @db.Decimal(10, 2)
+  remainingBalance Decimal      @db.Decimal(10, 2)
+  reason           String?
+  status           LedgerStatus @default(OPEN)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  employee         Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([date])
+}
+
+model Payable {
+  id               String        @id @default(cuid())
+  employeeId       String
+  date             DateTime
+  type             DeductionType @default(OTHER)
+  amount           Decimal       @db.Decimal(10, 2)
+  deductedAmount   Decimal       @default(0) @db.Decimal(10, 2)
+  remainingBalance Decimal       @db.Decimal(10, 2)
+  remarks          String?
+  status           LedgerStatus  @default(OPEN)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  employee         Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([date])
+}
+
+model PayrollSettings {
+  id                 String           @id @default(cuid())
+  frequency          PayrollFrequency @default(WEEKLY)
+  weeklyPayDay       Int?
+  monthlyPayDay      Int?
+  twiceMonthlyDayOne Int?
+  twiceMonthlyDayTwo Int?
+  autoGenerate       Boolean          @default(true)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+}
+
+model PayrollPeriod {
+  id             String              @id @default(cuid())
+  label          String
+  periodStart    DateTime
+  periodEnd      DateTime
+  payDate        DateTime
+  status         PayrollPeriodStatus @default(DRAFT)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  payrollEntries PayrollEntry[]
+
+  @@unique([periodStart, periodEnd])
+  @@index([payDate])
+}
+
+model PayrollEntry {
+  id                     String        @id @default(cuid())
+  payrollPeriodId        String
+  employeeId             String
+  daysPresent            Int           @default(0)
+  daysAbsent             Int           @default(0)
+  grossPay               Decimal       @db.Decimal(10, 2)
+  totalAdvancesDeducted  Decimal       @default(0) @db.Decimal(10, 2)
+  totalPayablesDeducted  Decimal       @default(0) @db.Decimal(10, 2)
+  netPay                 Decimal       @db.Decimal(10, 2)
+  notes                  String?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+  payrollPeriod          PayrollPeriod @relation(fields: [payrollPeriodId], references: [id], onDelete: Cascade)
+  employee               Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([payrollPeriodId, employeeId])
+}

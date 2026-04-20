@@ -1,0 +1,60 @@
+# dependencies
+
+node_modules/
+
+# next.js build
+
+.next/
+out/
+build/
+
+# production
+
+dist/
+
+# logs
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# env files
+
+.env
+.env.local
+.env.development
+.env.production
+
+# prisma
+
+prisma/*.db
+prisma/*.db-journal
+
+# vercel
+
+.vercel/
+
+# macOS
+
+.DS_Store
+
+# vscode
+
+.vscode/
+
+# typescript
+
+*.tsbuildinfo
+
+# coverage
+
+coverage/
+
+# pwa
+
+public/sw.js.map
+
+# misc
+
+*.log
