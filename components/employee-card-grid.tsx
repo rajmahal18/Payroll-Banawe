@@ -6,7 +6,7 @@ import { PayrollFrequency } from "@prisma/client";
 import { Clock3, EllipsisVertical, Eye, Pencil, Power, Trash2, X } from "lucide-react";
 import { deleteEmployeeAction, toggleEmployeeStatusAction, updateEmployeeAction } from "@/app/actions";
 import { PayrollScheduleFields } from "@/components/employee-payroll-schedule-fields";
-import { getWeekdayLabel } from "@/lib/utils";
+import { BUSINESS_TIME_ZONE, formatDate, getWeekdayLabel, toDateInputValue } from "@/lib/utils";
 
 type EmployeeCardItem = {
   id: string;
@@ -40,11 +40,7 @@ type EmployeeCardItem = {
 
 function formatDateLabel(value?: string | null) {
   if (!value) return "Not set";
-  return new Intl.DateTimeFormat("en-PH", {
-    month: "short",
-    day: "numeric",
-    year: "numeric"
-  }).format(new Date(value));
+  return formatDate(value);
 }
 
 function formatMoneyLabel(value: string) {
@@ -97,11 +93,7 @@ function describeEmployeePayrollSchedule(employee: Pick<
 }
 
 function formatDateKey(value: string | Date) {
-  const date = new Date(value);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return toDateInputValue(new Date(value));
 }
 
 function EmployeeEditModal({
@@ -176,7 +168,7 @@ function EmployeeEditModal({
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Start Date</label>
-              <input name="startDate" type="date" defaultValue={employee.startDate || ""} />
+              <input name="startDate" type="date" defaultValue={employee.startDate ? toDateInputValue(new Date(employee.startDate)) : ""} />
             </div>
             <PayrollScheduleFields
               compact
@@ -447,7 +439,7 @@ function EmployeeTimelineModal({
               <div className="text-center">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">Calendar</div>
                 <div className="mt-1 text-lg font-semibold text-stone-950">
-                  {new Intl.DateTimeFormat("en-PH", { month: "long", year: "numeric" }).format(visibleMonth)}
+                  {new Intl.DateTimeFormat("en-PH", { timeZone: BUSINESS_TIME_ZONE, month: "long", year: "numeric" }).format(visibleMonth)}
                 </div>
               </div>
               <button

@@ -95,8 +95,8 @@ async function createEmployeeWithGeneratedCode({
             position: position || null,
             dailyRate: new Prisma.Decimal(dailyRate),
             contactNumber: contactNumber || null,
-            startDate: startDate ? new Date(startDate) : null,
-            lastPaidDate: lastPaidDate ? new Date(lastPaidDate) : null,
+            startDate: startDate ? parseDateInputValue(startDate) : null,
+            lastPaidDate: lastPaidDate ? parseDateInputValue(lastPaidDate) : null,
             notes: notes || null,
             payrollFrequency: payrollSchedule.payrollFrequency,
             weeklyPayDay: payrollSchedule.weeklyPayDay,
@@ -217,7 +217,7 @@ async function ensurePayrollPeriodsForDate({
     const dueEmployees = employees
       .map((employee) => {
         const computedPayDate = getPayDateForDate(targetDate, employee);
-        const isDue = computedPayDate.toDateString() === targetDate.toDateString();
+        const isDue = toDateInputValue(computedPayDate) === toDateInputValue(targetDate);
         if (!isDue) return null;
         const period = getPeriodForPayDate(targetDate, employee);
         return { employee, period };
@@ -593,8 +593,8 @@ export async function updateEmployeeAction(formData: FormData) {
       position: parsed.position || null,
       dailyRate: new Prisma.Decimal(parsed.dailyRate),
       contactNumber: parsed.contactNumber || null,
-      startDate: parsed.startDate ? new Date(parsed.startDate) : null,
-      lastPaidDate: parsed.lastPaidDate ? new Date(parsed.lastPaidDate) : null,
+      startDate: parsed.startDate ? parseDateInputValue(parsed.startDate) : null,
+      lastPaidDate: parsed.lastPaidDate ? parseDateInputValue(parsed.lastPaidDate) : null,
       notes: parsed.notes || null,
       payrollFrequency: payrollSchedule.payrollFrequency,
       weeklyPayDay: payrollSchedule.weeklyPayDay,
@@ -642,7 +642,7 @@ export async function saveAttendanceAction(formData: FormData) {
   const user = await requireUser();
   const date = z.string().parse(formData.get("date"));
   const redirectTo = z.string().optional().parse(formData.get("redirectTo")) || "/dashboard";
-  const targetDate = startOfDayLocal(new Date(date));
+  const targetDate = startOfDayLocal(parseDateInputValue(date));
   const employees = await prisma.employee.findMany({
     where: { shopId: user.shop.id, status: EmployeeStatus.ACTIVE },
     orderBy: { fullName: "asc" }
@@ -712,7 +712,7 @@ export async function createAdvanceAction(formData: FormData) {
   await prisma.advance.create({
     data: {
       employeeId: employee.id,
-      date: new Date(parsed.date),
+      date: parseDateInputValue(parsed.date),
       amount: new Prisma.Decimal(parsed.amount),
       deductionPerPayroll:
         parsed.deductionPerPayroll === "" || parsed.deductionPerPayroll == null
@@ -752,7 +752,7 @@ export async function createBonusAction(formData: FormData) {
   await prisma.bonus.create({
     data: {
       employeeId: employee.id,
-      date: new Date(parsed.date),
+      date: parseDateInputValue(parsed.date),
       amount: new Prisma.Decimal(parsed.amount),
       reason: parsed.reason || null,
       status: LedgerStatus.OPEN
@@ -808,7 +808,7 @@ export async function updateAdvanceAction(formData: FormData) {
     where: { id: existing.id },
     data: {
       employeeId: employee.id,
-      date: new Date(parsed.date),
+      date: parseDateInputValue(parsed.date),
       amount: nextAmount,
       deductionPerPayroll:
         parsed.deductionPerPayroll === "" || parsed.deductionPerPayroll == null
@@ -880,7 +880,7 @@ export async function updateBonusAction(formData: FormData) {
     where: { id: existing.id },
     data: {
       employeeId: employee.id,
-      date: new Date(parsed.date),
+      date: parseDateInputValue(parsed.date),
       amount: new Prisma.Decimal(parsed.amount),
       reason: parsed.reason || null,
       status: parsed.status
@@ -937,7 +937,7 @@ export async function createPayableAction(formData: FormData) {
   await prisma.payable.create({
     data: {
       employeeId: employee.id,
-      date: new Date(parsed.date),
+      date: parseDateInputValue(parsed.date),
       amount: new Prisma.Decimal(parsed.amount),
       deductedAmount: new Prisma.Decimal(0),
       remainingBalance: new Prisma.Decimal(parsed.amount),

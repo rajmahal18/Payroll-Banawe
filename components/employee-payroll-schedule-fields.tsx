@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { PayrollFrequency } from "@prisma/client";
-import { getWeekdayLabel } from "@/lib/utils";
+import { getWeekdayLabel, toDateInputValue } from "@/lib/utils";
 
 type PayrollScheduleValues = {
   payrollFrequency?: PayrollFrequency;
@@ -131,7 +131,7 @@ export function PayrollScheduleFields({
                 <input
                   name="lastPaidDate"
                   type="date"
-                  defaultValue={initialValues?.lastPaidDate ?? ""}
+                  defaultValue={initialValues?.lastPaidDate ? toDateInputValue(new Date(initialValues.lastPaidDate)) : ""}
                 />
                 <p className="mt-1 text-xs text-[#7a7168]">Optional but recommended so the next payout auto-adjusts correctly. If blank, start date is used.</p>
               </div>

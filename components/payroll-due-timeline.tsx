@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { CalendarClock, CheckCheck, ChevronRight, Coins, ReceiptText, UsersRound, WalletCards, X } from "lucide-react";
 import { markPayrollPaidForDateAction } from "@/app/actions";
-import { formatDate, formatMoney } from "@/lib/utils";
+import { formatDate, formatMoney, parseDateInputValue } from "@/lib/utils";
 
 type TimelineEmployeeDetail = {
   employeeId: string;
@@ -201,7 +201,7 @@ function PayrollTimelineModal({
 
 export function PayrollDueTimeline({ entries, todayValue }: { entries: TimelineEntry[]; todayValue: string }) {
   const [activeEntry, setActiveEntry] = useState<TimelineEntry | null>(null);
-  const todayDate = new Date(`${todayValue}T00:00:00`);
+  const todayDate = parseDateInputValue(todayValue);
   const todayLabel = formatDate(todayDate);
   const hasTodayEntry = entries.some((entry) => entry.payDateValue === todayValue);
   const firstFutureIndex = entries.findIndex((entry) => entry.payDateValue >= todayValue);

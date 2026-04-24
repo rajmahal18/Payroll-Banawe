@@ -1,4 +1,3 @@
-import { addDays, differenceInCalendarDays, endOfDay, format, isSameDay, isToday, isTomorrow, startOfDay, subDays } from "date-fns";
 import { AttendanceChecklist } from "@/components/attendance-checklist";
 import { DashboardStatsStrip } from "@/components/dashboard-stats-strip";
 import { EmployeeCreateModal } from "@/components/employee-create-modal";
@@ -11,7 +10,18 @@ import {
 } from "@/lib/payroll-live";
 import { describePayrollFrequency, getPayDateForDate, getPeriodForPayDate, getTimelineRetentionDays } from "@/lib/payroll";
 import { prisma } from "@/lib/prisma";
-import { endOfDayLocal, parseDateInputValue, startOfDayLocal, toDateInputValue } from "@/lib/utils";
+import {
+  addBusinessDays,
+  differenceInBusinessDays,
+  endOfDayLocal,
+  formatDate,
+  formatDayMonth,
+  formatShortWeekday,
+  isSameBusinessDate,
+  parseDateInputValue,
+  startOfDayLocal,
+  toDateInputValue
+} from "@/lib/utils";
 
 export default async function DashboardPage({
   searchParams
@@ -19,11 +29,11 @@ export default async function DashboardPage({
   searchParams?: Promise<{ date?: string; saved?: string; edit?: string; paid?: string; error?: string }>;
 }) {
   const params = (await searchParams) ?? {};
-  const selectedDate = params.date ? new Date(params.date) : new Date();
+  const selectedDate = params.date ? parseDateInputValue(params.date) : new Date();
   const today = new Date();
   const dateValue = toDateInputValue(selectedDate);
-  const stripStart = startOfDay(subDays(selectedDate, 3));
-  const stripEnd = endOfDay(addDays(selectedDate, 3));
+  const stripStart = startOfDayLocal(addBusinessDays(selectedDate, -3));
+  const stripEnd = endOfDayLocal(addBusinessDays(selectedDate, 3));
   const todayStart = startOfDayLocal(today);
   const user = await requireUser();
   const employees = await prisma.employee.findMany({ where: { shopId: user.shop.id, status: "ACTIVE" }, orderBy: { fullName: "asc" } });
@@ -35,7 +45,7 @@ export default async function DashboardPage({
     prisma.attendanceRecord.count({
       where: {
         employee: { shopId: user.shop.id },
-        date: { gte: startOfDay(selectedDate), lte: endOfDay(selectedDate) },
+        date: { gte: startOfDayLocal(selectedDate), lte: endOfDayLocal(selectedDate) },
         status: "ABSENT"
       }
     }),
@@ -48,7 +58,7 @@ export default async function DashboardPage({
     prisma.attendanceRecord.findMany({
       where: {
         employee: { shopId: user.shop.id },
-        date: { gte: startOfDay(selectedDate), lte: endOfDay(selectedDate) }
+        date: { gte: startOfDayLocal(selectedDate), lte: endOfDayLocal(selectedDate) }
       }
     }),
     prisma.attendanceRecord.findMany({
@@ -139,7 +149,7 @@ export default async function DashboardPage({
         {
           status: "PAID",
           payDate: {
-            gte: startOfDayLocal(subDays(todayStart, 400)),
+            gte: startOfDayLocal(addBusinessDays(todayStart, -400)),
             lte: endOfDayLocal(todayStart)
           }
         }
@@ -170,7 +180,7 @@ export default async function DashboardPage({
       return Math.max(maxDays, getTimelineRetentionDays(entry.employee, period.payDate));
     }, 0);
 
-    return addDays(startOfDayLocal(period.payDate), maxRetentionDays) >= todayStart;
+    return addBusinessDays(startOfDayLocal(period.payDate), maxRetentionDays) >= todayStart;
   });
   const timelineRangeStartCandidates = [
     nextPayrollEvents[0]?.period.periodStart,
@@ -310,24 +320,24 @@ export default async function DashboardPage({
         const expectedAmount = runningNet;
         const payDateKey = toDateInputValue(event.payDate);
         const key = payDateKey;
-        const dueOffset = differenceInCalendarDays(startOfDayLocal(event.payDate), todayStart);
+        const dueOffset = differenceInBusinessDays(event.payDate, todayStart);
         const periodStatuses = periodStatusByDate.get(payDateKey) ?? [];
         const isPaid = periodStatuses.length > 0 && periodStatuses.every((status) => status === "PAID");
         const dueLabel = isPaid
           ? "Paid"
-          : isToday(event.payDate)
+          : dueOffset === 0
           ? "Today"
-          : isTomorrow(event.payDate)
+          : dueOffset === 1
             ? "Due tomorrow"
             : dueOffset > 1
               ? `Due in ${dueOffset} days`
               : dueOffset < 0
                 ? `Overdue by ${Math.abs(dueOffset)} day${Math.abs(dueOffset) > 1 ? "s" : ""}`
-                : format(event.payDate, "EEE");
+                : formatShortWeekday(event.payDate);
         const existing = groups.get(key) ?? {
           id: key,
           payDateValue: payDateKey,
-          payDateLabel: format(event.payDate, "MMM d, yyyy"),
+          payDateLabel: formatDate(event.payDate),
           dueLabel: isPaid ? "Paid" : dueLabel,
           isPaid,
           expectedTotal: 0,
@@ -415,24 +425,24 @@ export default async function DashboardPage({
     retainedTimelinePeriods.reduce(
       (groups, period) => {
         const payDateValue = toDateInputValue(period.payDate);
-        const dueOffset = differenceInCalendarDays(startOfDayLocal(period.payDate), todayStart);
+        const dueOffset = differenceInBusinessDays(period.payDate, todayStart);
         const isPaid = period.status === "PAID";
         const dueLabel = isPaid
           ? "Paid"
-          : isToday(period.payDate)
+          : dueOffset === 0
             ? "Today"
-            : isTomorrow(period.payDate)
+            : dueOffset === 1
               ? "Due tomorrow"
               : dueOffset > 1
                 ? `Due in ${dueOffset} days`
                 : dueOffset < 0
                   ? `Overdue by ${Math.abs(dueOffset)} day${Math.abs(dueOffset) > 1 ? "s" : ""}`
-                  : format(period.payDate, "EEE");
+                  : formatShortWeekday(period.payDate);
 
         const existing = groups.get(payDateValue) ?? {
           id: `actual-${payDateValue}`,
           payDateValue,
-          payDateLabel: format(period.payDate, "MMM d, yyyy"),
+          payDateLabel: formatDate(period.payDate),
           dueLabel,
           isPaid,
           expectedTotal: 0,
@@ -540,7 +550,7 @@ export default async function DashboardPage({
     })
     .slice(0, 8);
   const dateSnapshots = Array.from({ length: 7 }, (_, index) => {
-    const date = addDays(startOfDay(selectedDate), index - 3);
+    const date = addBusinessDays(selectedDate, index - 3);
     const snapshotDateValue = toDateInputValue(date);
     const dayRecords = stripRecords.filter((record) => toDateInputValue(record.date) === snapshotDateValue);
     const absentEmployees = dayRecords
@@ -567,11 +577,11 @@ export default async function DashboardPage({
 
     return {
       dateValue: snapshotDateValue,
-      dayLabel: format(date, "EEE"),
-      dateLabel: format(date, "d MMM"),
+      dayLabel: formatShortWeekday(date),
+      dateLabel: formatDayMonth(date),
       summary,
       active: snapshotDateValue === dateValue,
-      today: isSameDay(date, today)
+      today: isSameBusinessDate(date, today)
     };
   });
 
@@ -630,7 +640,7 @@ export default async function DashboardPage({
 
       <div className="mt-4">
         <AttendanceChecklist
-          title={`Attendance for ${selectedDate.toDateString()}`}
+          title={`Attendance for ${formatDate(selectedDate)}`}
           subtitle={
             hasSavedAttendance && !isEditingAttendance
               ? "Attendance for this day is already saved. Indicators are now read-only until you choose to edit."

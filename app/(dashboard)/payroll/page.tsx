@@ -4,7 +4,7 @@ import { finalizePayrollAction, generatePayrollForDateAction } from "@/app/actio
 import { requireUser } from "@/lib/auth";
 import { getLivePayrollAttendanceMetrics } from "@/lib/payroll-live";
 import { prisma } from "@/lib/prisma";
-import { formatDate, formatMoney, toDateInputValue } from "@/lib/utils";
+import { formatDate, formatMoney, parseDateInputValue, toDateInputValue } from "@/lib/utils";
 
 export default async function PayrollPage({
   searchParams
@@ -12,7 +12,7 @@ export default async function PayrollPage({
   searchParams?: Promise<{ payDate?: string; generated?: string; error?: string }>;
 }) {
   const params = (await searchParams) ?? {};
-  const selectedPayDate = params.payDate ? new Date(params.payDate) : new Date();
+  const selectedPayDate = params.payDate ? parseDateInputValue(params.payDate) : new Date();
   const user = await requireUser();
 
   const periods = await prisma.payrollPeriod.findMany({
