@@ -14,6 +14,7 @@ enum EmployeeStatus {
 
 enum AttendanceStatus {
   PRESENT
+  HALF_DAY
   ABSENT
 }
 
@@ -45,16 +46,30 @@ enum PayrollPeriodStatus {
 
 model User {
   id           String   @id @default(cuid())
+  shopId       String
   email        String   @unique
   passwordHash String
   name         String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  shop         Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+}
+
+model Shop {
+  id              String           @id @default(cuid())
+  name            String
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  users           User[]
+  employees       Employee[]
+  payrollSettings PayrollSettings[]
+  payrollPeriods  PayrollPeriod[]
 }
 
 model Employee {
   id                String             @id @default(cuid())
-  employeeCode      String             @unique
+  shopId            String
+  employeeCode      String
   fullName          String
   position          String?
   dailyRate         Decimal            @db.Decimal(10, 2)
@@ -69,10 +84,15 @@ model Employee {
   notes             String?
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
+  shop              Shop               @relation(fields: [shopId], references: [id], onDelete: Cascade)
   attendanceRecords AttendanceRecord[]
   advances          Advance[]
+  bonuses           Bonus[]
   payables          Payable[]
   payrollEntries    PayrollEntry[]
+
+  @@unique([shopId, employeeCode])
+  @@index([shopId, status])
 }
 
 model AttendanceRecord {
@@ -94,6 +114,7 @@ model Advance {
   employeeId       String
   date             DateTime
   amount           Decimal      @db.Decimal(10, 2)
+  deductionPerPayroll Decimal?  @db.Decimal(10, 2)
   deductedAmount   Decimal      @default(0) @db.Decimal(10, 2)
   remainingBalance Decimal      @db.Decimal(10, 2)
   reason           String?
@@ -101,6 +122,20 @@ model Advance {
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
   employee         Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([date])
+}
+
+model Bonus {
+  id         String       @id @default(cuid())
+  employeeId String
+  date       DateTime
+  amount     Decimal      @db.Decimal(10, 2)
+  reason     String?
+  status     LedgerStatus @default(OPEN)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  employee   Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([date])
 }
@@ -124,6 +159,7 @@ model Payable {
 
 model PayrollSettings {
   id                 String           @id @default(cuid())
+  shopId             String
   frequency          PayrollFrequency @default(WEEKLY)
   weeklyPayDay       Int?
   monthlyPayDay      Int?
@@ -132,10 +168,14 @@ model PayrollSettings {
   autoGenerate       Boolean          @default(true)
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
+  shop               Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId])
 }
 
 model PayrollPeriod {
   id             String              @id @default(cuid())
+  shopId         String
   label          String
   periodStart    DateTime
   periodEnd      DateTime
@@ -143,10 +183,11 @@ model PayrollPeriod {
   status         PayrollPeriodStatus @default(DRAFT)
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
+  shop           Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
   payrollEntries PayrollEntry[]
 
-  @@unique([periodStart, periodEnd])
-  @@index([payDate])
+  @@unique([shopId, periodStart, periodEnd])
+  @@index([shopId, payDate])
 }
 
 model PayrollEntry {
@@ -154,8 +195,10 @@ model PayrollEntry {
   payrollPeriodId        String
   employeeId             String
   daysPresent            Int           @default(0)
+  daysHalf               Int           @default(0)
   daysAbsent             Int           @default(0)
   grossPay               Decimal       @db.Decimal(10, 2)
+  totalBonusesAdded      Decimal       @default(0) @db.Decimal(10, 2)
   totalAdvancesDeducted  Decimal       @default(0) @db.Decimal(10, 2)
   totalPayablesDeducted  Decimal       @default(0) @db.Decimal(10, 2)
   netPay                 Decimal       @db.Decimal(10, 2)

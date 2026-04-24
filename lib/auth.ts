@@ -6,6 +6,16 @@ import { prisma } from "@/lib/prisma";
 
 const SESSION_COOKIE = "absensya_session";
 
+export type SessionUser = {
+  id: string;
+  email: string;
+  name: string | null;
+  shop: {
+    id: string;
+    name: string;
+  };
+};
+
 function getSecret() {
   const secret = process.env.SESSION_SECRET;
   if (!secret) {
@@ -56,6 +66,57 @@ export async function login(email: string, password: string) {
   return true;
 }
 
+export async function register({
+  ownerName,
+  shopName,
+  email,
+  password
+}: {
+  ownerName: string;
+  shopName: string;
+  email: string;
+  password: string;
+}) {
+  const passwordHash = await bcrypt.hash(password, 10);
+
+  const user = await prisma.$transaction(async (tx) => {
+    const createdShop = await tx.shop.create({
+      data: {
+        name: shopName
+      }
+    });
+
+    await tx.payrollSettings.create({
+      data: {
+        shopId: createdShop.id,
+        frequency: "WEEKLY",
+        weeklyPayDay: 5,
+        autoGenerate: true
+      }
+    });
+
+    return tx.user.create({
+      data: {
+        email,
+        passwordHash,
+        name: ownerName,
+        shopId: createdShop.id
+      }
+    });
+  });
+
+  const store = await cookies();
+  store.set(SESSION_COOKIE, createToken(user.id), {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 7
+  });
+
+  return user;
+}
+
 export async function logout() {
   const store = await cookies();
   store.delete(SESSION_COOKIE);
@@ -71,7 +132,17 @@ export async function getCurrentUser() {
 
   return prisma.user.findUnique({
     where: { id: payload.userId },
-    select: { id: true, email: true, name: true }
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      shop: {
+        select: {
+          id: true,
+          name: true
+        }
+      }
+    }
   });
 }
 

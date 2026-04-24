@@ -12,10 +12,10 @@ export function StatCard({
   money?: boolean;
 }) {
   const toneClass = {
-    default: "bg-sky-50 text-sky-700 ring-sky-200",
+    default: "bg-[#edf7ef] text-[#2f7d5b] ring-[#cfe9d6]",
     success: "bg-emerald-50 text-emerald-700 ring-emerald-200",
     danger: "bg-rose-50 text-rose-700 ring-rose-200",
-    warning: "bg-amber-50 text-amber-700 ring-amber-200"
+    warning: "bg-lime-50 text-lime-700 ring-lime-200"
   }[tone];
 
   const rendered = money ? formatMoney(value) : value;

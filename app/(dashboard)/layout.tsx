@@ -6,7 +6,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const user = await requireUser();
   const pathname = (await headers()).get("x-pathname") ?? "";
   return (
-    <AppShell pathname={pathname} userName={user.name || user.email}>
+    <AppShell pathname={pathname} userName={user.name || user.email} shopName={user.shop.name}>
       {children}
     </AppShell>
   );

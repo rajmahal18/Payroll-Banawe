@@ -1,15 +1,400 @@
 "use server";
-
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { Prisma, DeductionType, EmployeeStatus, LedgerStatus, PayrollFrequency, PayrollPeriodStatus } from "@prisma/client";
-import { login as doLogin, requireUser, logout } from "@/lib/auth";
+import { login as doLogin, register as doRegister, requireUser, logout } from "@/lib/auth";
+import { getCoveredDaysForPayroll, getEffectivePayrollStart, getLivePayrollAttendanceMetrics } from "@/lib/payroll-live";
 import { prisma } from "@/lib/prisma";
-import { endOfDayLocal, startOfDayLocal } from "@/lib/utils";
+import { endOfDayLocal, parseDateInputValue, startOfDayLocal, toDateInputValue } from "@/lib/utils";
 import { getPayDateForDate, getPeriodForPayDate } from "@/lib/payroll";
 
 const moneySchema = z.coerce.number().min(0);
+
+function getAdvanceDeductionForPayroll({
+  runningNet,
+  remainingBalance,
+  deductionPerPayroll
+}: {
+  runningNet: Prisma.Decimal;
+  remainingBalance: Prisma.Decimal;
+  deductionPerPayroll: Prisma.Decimal | null;
+}) {
+  const cappedBalance =
+    deductionPerPayroll && deductionPerPayroll.lessThan(remainingBalance) ? deductionPerPayroll : remainingBalance;
+
+  if (runningNet.lessThan(cappedBalance)) {
+    return runningNet;
+  }
+
+  return cappedBalance;
+}
+
+function getEmployeeCodeSequence(employeeCode: string) {
+  const match = employeeCode.match(/(\d+)$/);
+  return match ? Number(match[1]) : 0;
+}
+
+function formatEmployeeCode(sequence: number) {
+  return `EMP-${String(sequence).padStart(3, "0")}`;
+}
+
+async function getNextEmployeeCode(tx: Prisma.TransactionClient, shopId: string) {
+  const existingCodes = await tx.employee.findMany({
+    where: { shopId },
+    select: { employeeCode: true }
+  });
+
+  const nextSequence =
+    existingCodes.reduce((maxSequence, employee) => Math.max(maxSequence, getEmployeeCodeSequence(employee.employeeCode)), 0) + 1;
+
+  return formatEmployeeCode(nextSequence);
+}
+
+function isEmployeeCodeConflict(error: unknown) {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2002" &&
+    Array.isArray(error.meta?.target) &&
+    error.meta.target.includes("shopId") &&
+    error.meta.target.includes("employeeCode")
+  );
+}
+
+async function createEmployeeWithGeneratedCode({
+  shopId,
+  fullName,
+  position,
+  dailyRate,
+  contactNumber,
+  startDate,
+  notes,
+  payrollSchedule
+}: {
+  shopId: string;
+  fullName: string;
+  position?: string;
+  dailyRate: number;
+  contactNumber?: string;
+  startDate?: string;
+  notes?: string;
+  payrollSchedule: ReturnType<typeof parseEmployeePayrollSchedule>;
+}) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await prisma.$transaction(async (tx) => {
+        const employeeCode = await getNextEmployeeCode(tx, shopId);
+
+        return tx.employee.create({
+          data: {
+            shopId,
+            employeeCode,
+            fullName,
+            position: position || null,
+            dailyRate: new Prisma.Decimal(dailyRate),
+            contactNumber: contactNumber || null,
+            startDate: startDate ? new Date(startDate) : null,
+            notes: notes || null,
+            payrollFrequency: payrollSchedule.payrollFrequency,
+            weeklyPayDay: payrollSchedule.weeklyPayDay,
+            monthlyPayDay: payrollSchedule.monthlyPayDay,
+            twiceMonthlyDayOne: payrollSchedule.twiceMonthlyDayOne,
+            twiceMonthlyDayTwo: payrollSchedule.twiceMonthlyDayTwo,
+            status: EmployeeStatus.ACTIVE
+          }
+        });
+      });
+    } catch (error) {
+      if (isEmployeeCodeConflict(error) && attempt < 2) {
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw new Error("Unable to generate a unique employee code for this shop.");
+}
+
+async function requireShopEmployee(shopId: string, employeeId: string) {
+  return prisma.employee.findFirstOrThrow({
+    where: {
+      id: employeeId,
+      shopId
+    }
+  });
+}
+
+async function hasPayrollAttendanceMismatch(
+  tx: Prisma.TransactionClient,
+  periods: Array<{
+    id: string;
+    periodStart: Date;
+    periodEnd: Date;
+    payrollEntries: Array<{
+      daysPresent: number;
+      daysHalf?: number;
+      daysAbsent: number;
+      employee: {
+        id: string;
+        startDate: Date | null;
+        dailyRate: Prisma.Decimal;
+      };
+    }>;
+  }>
+) {
+  if (!periods.length) {
+    return false;
+  }
+
+  const employeeIds = Array.from(new Set(periods.flatMap((period) => period.payrollEntries.map((entry) => entry.employee.id))));
+  if (!employeeIds.length) {
+    return false;
+  }
+
+  const rangeStart = periods.reduce(
+    (min, period) => (period.periodStart < min ? period.periodStart : min),
+    periods[0].periodStart
+  );
+  const rangeEnd = periods.reduce((max, period) => (period.periodEnd > max ? period.periodEnd : max), periods[0].periodEnd);
+
+  const attendanceRecords = await tx.attendanceRecord.findMany({
+    where: {
+      employeeId: { in: employeeIds },
+      date: {
+        gte: startOfDayLocal(rangeStart),
+        lte: endOfDayLocal(rangeEnd)
+      }
+    },
+    select: {
+      employeeId: true,
+      date: true,
+      status: true
+    }
+  });
+
+  const attendanceByEmployee = new Map<string, typeof attendanceRecords>();
+  for (const employeeId of employeeIds) {
+    attendanceByEmployee.set(
+      employeeId,
+      attendanceRecords.filter((record) => record.employeeId === employeeId)
+    );
+  }
+
+  return periods.some((period) =>
+    period.payrollEntries.some((entry) => {
+      const liveMetrics = getLivePayrollAttendanceMetrics({
+        employee: entry.employee,
+        periodStart: period.periodStart,
+        periodEnd: period.periodEnd,
+        attendanceRecords: attendanceByEmployee.get(entry.employee.id) ?? []
+      });
+
+      return (
+        liveMetrics.daysPresent !== entry.daysPresent ||
+        liveMetrics.daysHalf !== (entry.daysHalf ?? 0) ||
+        liveMetrics.daysAbsent !== entry.daysAbsent
+      );
+    })
+  );
+}
+
+async function ensurePayrollPeriodsForDate({
+  shopId,
+  targetDate
+}: {
+  shopId: string;
+  targetDate: Date;
+}) {
+  let dueCount = 0;
+
+  await prisma.$transaction(async (tx) => {
+    const employees = await tx.employee.findMany({ where: { shopId, status: EmployeeStatus.ACTIVE } });
+    const dueEmployees = employees
+      .map((employee) => {
+        const computedPayDate = getPayDateForDate(targetDate, employee);
+        const isDue = computedPayDate.toDateString() === targetDate.toDateString();
+        if (!isDue) return null;
+        const period = getPeriodForPayDate(targetDate, employee);
+        return { employee, period };
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+    dueCount = dueEmployees.length;
+    if (!dueEmployees.length) {
+      return;
+    }
+
+    const payrollPeriods = new Map<string, { id: string }>();
+
+    for (const { employee, period } of dueEmployees) {
+      const key = `${period.periodStart.toISOString()}__${period.periodEnd.toISOString()}`;
+      let payrollPeriod = payrollPeriods.get(key);
+
+      if (!payrollPeriod) {
+        const upserted = await tx.payrollPeriod.upsert({
+          where: {
+            shopId_periodStart_periodEnd: {
+              shopId,
+              periodStart: period.periodStart,
+              periodEnd: period.periodEnd
+            }
+          },
+          update: {
+            payDate: period.payDate,
+            label: `Payroll - ${period.label}`
+          },
+          create: {
+            shopId,
+            label: `Payroll - ${period.label}`,
+            periodStart: period.periodStart,
+            periodEnd: period.periodEnd,
+            payDate: period.payDate,
+            status: PayrollPeriodStatus.DRAFT
+          }
+        });
+        payrollPeriod = { id: upserted.id };
+        payrollPeriods.set(key, payrollPeriod);
+      }
+
+      const existingEntry = await tx.payrollEntry.findUnique({
+        where: {
+          payrollPeriodId_employeeId: {
+            payrollPeriodId: payrollPeriod.id,
+            employeeId: employee.id
+          }
+        }
+      });
+
+      if (existingEntry) {
+        continue;
+      }
+
+      const coveredDays = getCoveredDaysForPayroll(period.periodStart, period.periodEnd, employee.startDate);
+      const effectiveAttendanceStart = getEffectivePayrollStart(period.periodStart, employee.startDate);
+
+      const attendance =
+        coveredDays === 0
+          ? []
+          : await tx.attendanceRecord.findMany({
+              where: {
+                employeeId: employee.id,
+                date: {
+                  gte: effectiveAttendanceStart,
+                  lte: endOfDayLocal(period.periodEnd)
+                }
+              }
+            });
+
+      const daysAbsent = attendance.filter((item) => item.status === "ABSENT").length;
+      const daysHalf = attendance.filter((item) => String(item.status) === "HALF_DAY").length;
+      const daysPresent = Math.max(coveredDays - daysAbsent - daysHalf, 0);
+      const paidDayUnits = new Prisma.Decimal(daysPresent).plus(new Prisma.Decimal(daysHalf).mul(0.5));
+      const grossPay = paidDayUnits.mul(employee.dailyRate);
+      const bonuses = await tx.bonus.findMany({
+        where: {
+          employeeId: employee.id,
+          status: LedgerStatus.OPEN,
+          date: { lte: endOfDayLocal(period.periodEnd) }
+        },
+        orderBy: { date: "asc" }
+      });
+
+      const advances = await tx.advance.findMany({
+        where: {
+          employeeId: employee.id,
+          status: LedgerStatus.OPEN,
+          date: { lte: endOfDayLocal(period.periodEnd) }
+        },
+        orderBy: { date: "asc" }
+      });
+
+      const payables = await tx.payable.findMany({
+        where: {
+          employeeId: employee.id,
+          status: LedgerStatus.OPEN,
+          date: { lte: endOfDayLocal(period.periodEnd) }
+        },
+        orderBy: { date: "asc" }
+      });
+
+      let bonusTotal = new Prisma.Decimal(0);
+      for (const bonus of bonuses) {
+        bonusTotal = bonusTotal.plus(bonus.amount);
+      }
+
+      let runningNet = grossPay.plus(bonusTotal);
+      let deductedAdvanceTotal = new Prisma.Decimal(0);
+      let deductedPayableTotal = new Prisma.Decimal(0);
+
+      for (const bonus of bonuses) {
+        await tx.bonus.update({
+          where: { id: bonus.id },
+          data: {
+            status: LedgerStatus.CLOSED
+          }
+        });
+      }
+
+      for (const advance of advances) {
+        if (runningNet.lte(0)) break;
+        const deduction = getAdvanceDeductionForPayroll({
+          runningNet,
+          remainingBalance: advance.remainingBalance,
+          deductionPerPayroll: advance.deductionPerPayroll
+        });
+        if (deduction.gt(0)) {
+          runningNet = runningNet.minus(deduction);
+          deductedAdvanceTotal = deductedAdvanceTotal.plus(deduction);
+          const newRemaining = advance.remainingBalance.minus(deduction);
+          await tx.advance.update({
+            where: { id: advance.id },
+            data: {
+              deductedAmount: advance.deductedAmount.plus(deduction),
+              remainingBalance: newRemaining,
+              status: newRemaining.eq(0) ? LedgerStatus.CLOSED : LedgerStatus.OPEN
+            }
+          });
+        }
+      }
+
+      for (const payable of payables) {
+        if (runningNet.lte(0)) break;
+        const deduction = runningNet.lessThan(payable.remainingBalance) ? runningNet : payable.remainingBalance;
+        if (deduction.gt(0)) {
+          runningNet = runningNet.minus(deduction);
+          deductedPayableTotal = deductedPayableTotal.plus(deduction);
+          const newRemaining = payable.remainingBalance.minus(deduction);
+          await tx.payable.update({
+            where: { id: payable.id },
+            data: {
+              deductedAmount: payable.deductedAmount.plus(deduction),
+              remainingBalance: newRemaining,
+              status: newRemaining.eq(0) ? LedgerStatus.CLOSED : LedgerStatus.OPEN
+            }
+          });
+        }
+      }
+
+      await tx.payrollEntry.create({
+        data: {
+          payrollPeriodId: payrollPeriod.id,
+          employeeId: employee.id,
+          daysPresent,
+          daysHalf,
+          daysAbsent,
+          grossPay,
+          totalBonusesAdded: bonusTotal,
+          totalAdvancesDeducted: deductedAdvanceTotal,
+          totalPayablesDeducted: deductedPayableTotal,
+          netPay: runningNet
+        } as never
+      });
+    }
+  });
+
+  return dueCount;
+}
 
 function parseEmployeePayrollSchedule(formData: FormData) {
   const payrollFrequency = z.nativeEnum(PayrollFrequency).parse(formData.get("payrollFrequency"));
@@ -54,15 +439,57 @@ export async function loginAction(formData: FormData) {
   redirect("/dashboard");
 }
 
+export async function registerAction(formData: FormData) {
+  const schema = z
+    .object({
+      ownerName: z.string().trim().min(1),
+      shopName: z.string().trim().min(1),
+      email: z.string().email(),
+      password: z.string().min(8),
+      confirmPassword: z.string().min(8)
+    })
+    .refine((data) => data.password === data.confirmPassword, {
+      path: ["confirmPassword"]
+    });
+
+  const parsed = schema.safeParse({
+    ownerName: formData.get("ownerName"),
+    shopName: formData.get("shopName"),
+    email: formData.get("email"),
+    password: formData.get("password"),
+    confirmPassword: formData.get("confirmPassword")
+  });
+
+  if (!parsed.success) {
+    redirect("/login?mode=register&error=register-invalid");
+  }
+
+  try {
+    await doRegister({
+      ownerName: parsed.data.ownerName,
+      shopName: parsed.data.shopName,
+      email: parsed.data.email,
+      password: parsed.data.password
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      redirect("/login?mode=register&error=email-taken");
+    }
+
+    throw error;
+  }
+
+  redirect("/dashboard");
+}
+
 
 export async function logoutAction() {
   await logout();
   redirect("/login");
 }
 export async function createEmployeeAction(formData: FormData) {
-  await requireUser();
+  const user = await requireUser();
   const schema = z.object({
-    employeeCode: z.string().min(1),
     fullName: z.string().min(1),
     position: z.string().optional(),
     dailyRate: moneySchema,
@@ -73,7 +500,6 @@ export async function createEmployeeAction(formData: FormData) {
   const payrollSchedule = parseEmployeePayrollSchedule(formData);
 
   const parsed = schema.parse({
-    employeeCode: formData.get("employeeCode"),
     fullName: formData.get("fullName"),
     position: formData.get("position"),
     dailyRate: formData.get("dailyRate"),
@@ -82,22 +508,15 @@ export async function createEmployeeAction(formData: FormData) {
     notes: formData.get("notes")
   });
 
-  await prisma.employee.create({
-    data: {
-      employeeCode: parsed.employeeCode,
-      fullName: parsed.fullName,
-      position: parsed.position || null,
-      dailyRate: new Prisma.Decimal(parsed.dailyRate),
-      contactNumber: parsed.contactNumber || null,
-      startDate: parsed.startDate ? new Date(parsed.startDate) : null,
-      notes: parsed.notes || null,
-      payrollFrequency: payrollSchedule.payrollFrequency,
-      weeklyPayDay: payrollSchedule.weeklyPayDay,
-      monthlyPayDay: payrollSchedule.monthlyPayDay,
-      twiceMonthlyDayOne: payrollSchedule.twiceMonthlyDayOne,
-      twiceMonthlyDayTwo: payrollSchedule.twiceMonthlyDayTwo,
-      status: EmployeeStatus.ACTIVE
-    }
+  await createEmployeeWithGeneratedCode({
+    shopId: user.shop.id,
+    fullName: parsed.fullName,
+    position: parsed.position,
+    dailyRate: parsed.dailyRate,
+    contactNumber: parsed.contactNumber,
+    startDate: parsed.startDate,
+    notes: parsed.notes,
+    payrollSchedule
   });
 
   revalidatePath("/employees");
@@ -105,10 +524,9 @@ export async function createEmployeeAction(formData: FormData) {
 }
 
 export async function updateEmployeeAction(formData: FormData) {
-  await requireUser();
+  const user = await requireUser();
   const schema = z.object({
     employeeId: z.string().min(1),
-    employeeCode: z.string().min(1),
     fullName: z.string().min(1),
     position: z.string().optional(),
     dailyRate: moneySchema,
@@ -120,7 +538,6 @@ export async function updateEmployeeAction(formData: FormData) {
 
   const parsed = schema.parse({
     employeeId: formData.get("employeeId"),
-    employeeCode: formData.get("employeeCode"),
     fullName: formData.get("fullName"),
     position: formData.get("position"),
     dailyRate: formData.get("dailyRate"),
@@ -129,10 +546,11 @@ export async function updateEmployeeAction(formData: FormData) {
     notes: formData.get("notes")
   });
 
+  await requireShopEmployee(user.shop.id, parsed.employeeId);
+
   await prisma.employee.update({
     where: { id: parsed.employeeId },
     data: {
-      employeeCode: parsed.employeeCode,
       fullName: parsed.fullName,
       position: parsed.position || null,
       dailyRate: new Prisma.Decimal(parsed.dailyRate),
@@ -152,9 +570,11 @@ export async function updateEmployeeAction(formData: FormData) {
 }
 
 export async function toggleEmployeeStatusAction(formData: FormData) {
-  await requireUser();
+  const user = await requireUser();
   const employeeId = z.string().parse(formData.get("employeeId"));
   const current = z.nativeEnum(EmployeeStatus).parse(formData.get("currentStatus"));
+
+  await requireShopEmployee(user.shop.id, employeeId);
 
   await prisma.employee.update({
     where: { id: employeeId },
@@ -165,8 +585,10 @@ export async function toggleEmployeeStatusAction(formData: FormData) {
 }
 
 export async function deleteEmployeeAction(formData: FormData) {
-  await requireUser();
+  const user = await requireUser();
   const employeeId = z.string().parse(formData.get("employeeId"));
+
+  await requireShopEmployee(user.shop.id, employeeId);
 
   await prisma.employee.delete({
     where: { id: employeeId }
@@ -177,23 +599,27 @@ export async function deleteEmployeeAction(formData: FormData) {
 }
 
 export async function saveAttendanceAction(formData: FormData) {
-  await requireUser();
+  const user = await requireUser();
   const date = z.string().parse(formData.get("date"));
   const redirectTo = z.string().optional().parse(formData.get("redirectTo")) || "/dashboard";
   const targetDate = startOfDayLocal(new Date(date));
-  const employees = await prisma.employee.findMany({ where: { status: EmployeeStatus.ACTIVE }, orderBy: { fullName: "asc" } });
+  const employees = await prisma.employee.findMany({
+    where: { shopId: user.shop.id, status: EmployeeStatus.ACTIVE },
+    orderBy: { fullName: "asc" }
+  });
 
   await prisma.$transaction(async (tx) => {
     for (const employee of employees) {
-      const key = `status_${employee.id}`;
-      const presentKey = `present_${employee.id}`;
+      const statusKey = `status_${employee.id}`;
       const remarksKey = `remarks_${employee.id}`;
-      const statusValue = formData.has(key)
-        ? String(formData.get(key) || "present")
-        : formData.get(presentKey) === "on"
-          ? "present"
-          : "absent";
       const remarks = String(formData.get(remarksKey) || "").trim();
+      const rawStatus = String(formData.get(statusKey) || "present");
+      const statusValue =
+        rawStatus === "absent"
+          ? ("ABSENT" as const)
+          : rawStatus === "half_day"
+            ? ("HALF_DAY" as const)
+            : ("PRESENT" as const);
 
       await tx.attendanceRecord.upsert({
         where: {
@@ -203,13 +629,13 @@ export async function saveAttendanceAction(formData: FormData) {
           }
         },
         update: {
-          status: statusValue === "absent" ? "ABSENT" : "PRESENT",
+          status: statusValue as never,
           remarks: remarks || null
         },
         create: {
           employeeId: employee.id,
           date: targetDate,
-          status: statusValue === "absent" ? "ABSENT" : "PRESENT",
+          status: statusValue as never,
           remarks: remarks || null
         }
       });
@@ -222,7 +648,50 @@ export async function saveAttendanceAction(formData: FormData) {
 }
 
 export async function createAdvanceAction(formData: FormData) {
-  await requireUser();
+  const user = await requireUser();
+  const schema = z.object({
+    employeeId: z.string().min(1),
+    date: z.string().min(1),
+    amount: moneySchema.positive(),
+    deductionPerPayroll: z
+      .union([z.literal(""), z.coerce.number().positive()])
+      .optional(),
+    reason: z.string().optional()
+  });
+
+  const parsed = schema.parse({
+    employeeId: formData.get("employeeId"),
+    date: formData.get("date"),
+    amount: formData.get("amount"),
+    deductionPerPayroll: formData.get("deductionPerPayroll"),
+    reason: formData.get("reason")
+  });
+
+  const employee = await requireShopEmployee(user.shop.id, parsed.employeeId);
+
+  await prisma.advance.create({
+    data: {
+      employeeId: employee.id,
+      date: new Date(parsed.date),
+      amount: new Prisma.Decimal(parsed.amount),
+      deductionPerPayroll:
+        parsed.deductionPerPayroll === "" || parsed.deductionPerPayroll == null
+          ? null
+          : new Prisma.Decimal(parsed.deductionPerPayroll),
+      deductedAmount: new Prisma.Decimal(0),
+      remainingBalance: new Prisma.Decimal(parsed.amount),
+      reason: parsed.reason || null,
+      status: LedgerStatus.OPEN
+    }
+  });
+
+  revalidatePath("/advances");
+  revalidatePath("/dashboard");
+  redirect("/advances");
+}
+
+export async function createBonusAction(formData: FormData) {
+  const user = await requireUser();
   const schema = z.object({
     employeeId: z.string().min(1),
     date: z.string().min(1),
@@ -237,25 +706,26 @@ export async function createAdvanceAction(formData: FormData) {
     reason: formData.get("reason")
   });
 
-  await prisma.advance.create({
+  const employee = await requireShopEmployee(user.shop.id, parsed.employeeId);
+
+  await prisma.bonus.create({
     data: {
-      employeeId: parsed.employeeId,
+      employeeId: employee.id,
       date: new Date(parsed.date),
       amount: new Prisma.Decimal(parsed.amount),
-      deductedAmount: new Prisma.Decimal(0),
-      remainingBalance: new Prisma.Decimal(parsed.amount),
       reason: parsed.reason || null,
       status: LedgerStatus.OPEN
     }
   });
 
-  revalidatePath("/advances");
+  revalidatePath("/bonuses");
   revalidatePath("/dashboard");
-  redirect("/advances");
+  revalidatePath("/payroll");
+  redirect("/bonuses");
 }
 
 export async function createPayableAction(formData: FormData) {
-  await requireUser();
+  const user = await requireUser();
   const schema = z.object({
     employeeId: z.string().min(1),
     date: z.string().min(1),
@@ -272,9 +742,11 @@ export async function createPayableAction(formData: FormData) {
     remarks: formData.get("remarks")
   });
 
+  const employee = await requireShopEmployee(user.shop.id, parsed.employeeId);
+
   await prisma.payable.create({
     data: {
-      employeeId: parsed.employeeId,
+      employeeId: employee.id,
       date: new Date(parsed.date),
       amount: new Prisma.Decimal(parsed.amount),
       deductedAmount: new Prisma.Decimal(0),
@@ -291,10 +763,10 @@ export async function createPayableAction(formData: FormData) {
 }
 
 export async function savePayrollSettingsAction(formData: FormData) {
-  await requireUser();
+  const user = await requireUser();
   const autoGenerate = formData.get("autoGenerate") === "on";
 
-  const existing = await prisma.payrollSettings.findFirst();
+  const existing = await prisma.payrollSettings.findFirst({ where: { shopId: user.shop.id } });
 
   if (existing) {
     await prisma.payrollSettings.update({
@@ -304,6 +776,7 @@ export async function savePayrollSettingsAction(formData: FormData) {
   } else {
     await prisma.payrollSettings.create({
       data: {
+        shopId: user.shop.id,
         frequency: PayrollFrequency.WEEKLY,
         weeklyPayDay: 5,
         autoGenerate
@@ -317,166 +790,102 @@ export async function savePayrollSettingsAction(formData: FormData) {
 }
 
 export async function generatePayrollForDateAction(formData: FormData) {
-  await requireUser();
-  const targetDate = startOfDayLocal(new Date(z.string().parse(formData.get("targetDate"))));
-  let dueCount = 0;
-  await prisma.$transaction(async (tx) => {
-    const employees = await tx.employee.findMany({ where: { status: EmployeeStatus.ACTIVE } });
-    const dueEmployees = employees
-      .map((employee) => {
-        const computedPayDate = getPayDateForDate(targetDate, employee);
-        const isDue = computedPayDate.toDateString() === targetDate.toDateString();
-        if (!isDue) return null;
-        const period = getPeriodForPayDate(targetDate, employee);
-        return { employee, period };
-      })
-      .filter((item): item is NonNullable<typeof item> => Boolean(item));
-
-    dueCount = dueEmployees.length;
-    if (!dueEmployees.length) {
-      return;
-    }
-
-    const payrollPeriods = new Map<string, { id: string }>();
-
-    for (const { employee, period } of dueEmployees) {
-      const key = `${period.periodStart.toISOString()}__${period.periodEnd.toISOString()}`;
-      let payrollPeriod = payrollPeriods.get(key);
-
-      if (!payrollPeriod) {
-        const upserted = await tx.payrollPeriod.upsert({
-          where: {
-            periodStart_periodEnd: {
-              periodStart: period.periodStart,
-              periodEnd: period.periodEnd
-            }
-          },
-          update: {
-            payDate: period.payDate,
-            label: `Payroll - ${period.label}`
-          },
-          create: {
-            label: `Payroll - ${period.label}`,
-            periodStart: period.periodStart,
-            periodEnd: period.periodEnd,
-            payDate: period.payDate,
-            status: PayrollPeriodStatus.DRAFT
-          }
-        });
-        payrollPeriod = { id: upserted.id };
-        payrollPeriods.set(key, payrollPeriod);
-      }
-
-      const attendance = await tx.attendanceRecord.findMany({
-        where: {
-          employeeId: employee.id,
-          date: {
-            gte: startOfDayLocal(period.periodStart),
-            lte: endOfDayLocal(period.periodEnd)
-          }
-        }
-      });
-
-      const daysAbsent = attendance.filter((item) => item.status === "ABSENT").length;
-      const daysPresent = attendance.filter((item) => item.status === "PRESENT").length;
-      const grossPay = new Prisma.Decimal(daysPresent).mul(employee.dailyRate);
-
-      const advances = await tx.advance.findMany({
-        where: {
-          employeeId: employee.id,
-          status: LedgerStatus.OPEN,
-          date: { lte: endOfDayLocal(period.periodEnd) }
-        },
-        orderBy: { date: "asc" }
-      });
-
-      const payables = await tx.payable.findMany({
-        where: {
-          employeeId: employee.id,
-          status: LedgerStatus.OPEN,
-          date: { lte: endOfDayLocal(period.periodEnd) }
-        },
-        orderBy: { date: "asc" }
-      });
-
-      let runningNet = grossPay;
-      let deductedAdvanceTotal = new Prisma.Decimal(0);
-      let deductedPayableTotal = new Prisma.Decimal(0);
-
-      for (const advance of advances) {
-        if (runningNet.lte(0)) break;
-        const deduction = runningNet.lessThan(advance.remainingBalance) ? runningNet : advance.remainingBalance;
-        if (deduction.gt(0)) {
-          runningNet = runningNet.minus(deduction);
-          deductedAdvanceTotal = deductedAdvanceTotal.plus(deduction);
-          const newRemaining = advance.remainingBalance.minus(deduction);
-          await tx.advance.update({
-            where: { id: advance.id },
-            data: {
-              deductedAmount: advance.deductedAmount.plus(deduction),
-              remainingBalance: newRemaining,
-              status: newRemaining.eq(0) ? LedgerStatus.CLOSED : LedgerStatus.OPEN
-            }
-          });
-        }
-      }
-
-      for (const payable of payables) {
-        if (runningNet.lte(0)) break;
-        const deduction = runningNet.lessThan(payable.remainingBalance) ? runningNet : payable.remainingBalance;
-        if (deduction.gt(0)) {
-          runningNet = runningNet.minus(deduction);
-          deductedPayableTotal = deductedPayableTotal.plus(deduction);
-          const newRemaining = payable.remainingBalance.minus(deduction);
-          await tx.payable.update({
-            where: { id: payable.id },
-            data: {
-              deductedAmount: payable.deductedAmount.plus(deduction),
-              remainingBalance: newRemaining,
-              status: newRemaining.eq(0) ? LedgerStatus.CLOSED : LedgerStatus.OPEN
-            }
-          });
-        }
-      }
-
-      await tx.payrollEntry.upsert({
-        where: {
-          payrollPeriodId_employeeId: {
-            payrollPeriodId: payrollPeriod.id,
-            employeeId: employee.id
-          }
-        },
-        update: {
-          daysPresent,
-          daysAbsent,
-          grossPay,
-          totalAdvancesDeducted: deductedAdvanceTotal,
-          totalPayablesDeducted: deductedPayableTotal,
-          netPay: runningNet
-        },
-        create: {
-          payrollPeriodId: payrollPeriod.id,
-          employeeId: employee.id,
-          daysPresent,
-          daysAbsent,
-          grossPay,
-          totalAdvancesDeducted: deductedAdvanceTotal,
-          totalPayablesDeducted: deductedPayableTotal,
-          netPay: runningNet
-        }
-      });
-    }
-  });
+  const user = await requireUser();
+  const targetDate = startOfDayLocal(parseDateInputValue(z.string().parse(formData.get("targetDate"))));
+  const dueCount = (await ensurePayrollPeriodsForDate({ shopId: user.shop.id, targetDate })) ?? 0;
 
   revalidatePath("/payroll");
-  redirect(
-    `/payroll?payDate=${targetDate.toISOString().slice(0, 10)}${dueCount ? "&generated=1" : "&error=no-due-employees"}`
-  );
+  revalidatePath("/dashboard");
+  redirect(`/payroll?payDate=${toDateInputValue(targetDate)}${dueCount ? "&generated=1" : "&error=no-due-employees"}`);
 }
 
 export async function finalizePayrollAction(formData: FormData) {
-  await requireUser();
+  const user = await requireUser();
   const payrollPeriodId = z.string().parse(formData.get("payrollPeriodId"));
+  const payrollPeriod = await prisma.payrollPeriod.findFirstOrThrow({
+    where: {
+      id: payrollPeriodId,
+      shopId: user.shop.id
+    },
+    include: {
+      payrollEntries: {
+        include: {
+          employee: {
+            select: {
+              id: true,
+              startDate: true,
+              dailyRate: true
+            }
+          }
+        }
+      }
+    }
+  });
+
+  const attendanceMismatch = await prisma.$transaction((tx) => hasPayrollAttendanceMismatch(tx, [payrollPeriod]));
+  if (attendanceMismatch) {
+    revalidatePath("/payroll");
+    redirect(`/payroll?error=attendance-mismatch&payDate=${toDateInputValue(payrollPeriod.payDate)}`);
+  }
+
   await prisma.payrollPeriod.update({ where: { id: payrollPeriodId }, data: { status: PayrollPeriodStatus.FINALIZED } });
   revalidatePath("/payroll");
+}
+
+export async function markPayrollPaidForDateAction(formData: FormData) {
+  const user = await requireUser();
+  const targetDate = startOfDayLocal(parseDateInputValue(z.string().parse(formData.get("payDate"))));
+  const dueCount = (await ensurePayrollPeriodsForDate({ shopId: user.shop.id, targetDate })) ?? 0;
+
+  if (!dueCount) {
+    revalidatePath("/dashboard");
+    redirect(`/dashboard?error=no-due-payroll&date=${toDateInputValue(targetDate)}`);
+  }
+
+  const duePeriods = await prisma.payrollPeriod.findMany({
+    where: {
+      shopId: user.shop.id,
+      payDate: {
+        gte: startOfDayLocal(targetDate),
+        lte: endOfDayLocal(targetDate)
+      }
+    },
+    include: {
+      payrollEntries: {
+        include: {
+          employee: {
+            select: {
+              id: true,
+              startDate: true,
+              dailyRate: true
+            }
+          }
+        }
+      }
+    }
+  });
+
+  const attendanceMismatch = await prisma.$transaction((tx) => hasPayrollAttendanceMismatch(tx, duePeriods));
+  if (attendanceMismatch) {
+    revalidatePath("/dashboard");
+    revalidatePath("/payroll");
+    redirect(`/dashboard?error=attendance-mismatch&date=${toDateInputValue(targetDate)}`);
+  }
+
+  await prisma.payrollPeriod.updateMany({
+    where: {
+      shopId: user.shop.id,
+      payDate: {
+        gte: startOfDayLocal(targetDate),
+        lte: endOfDayLocal(targetDate)
+      }
+    },
+    data: {
+      status: PayrollPeriodStatus.PAID
+    }
+  });
+
+  revalidatePath("/dashboard");
+  revalidatePath("/payroll");
+  redirect(`/dashboard?paid=1&date=${toDateInputValue(targetDate)}`);
 }

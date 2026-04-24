@@ -1,5 +1,6 @@
 import { savePayrollSettingsAction } from "@/app/actions";
 import { PageHeader } from "@/components/page-header";
+import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export default async function SettingsPage({
@@ -8,7 +9,8 @@ export default async function SettingsPage({
   searchParams?: Promise<{ saved?: string; error?: string }>;
 }) {
   const params = (await searchParams) ?? {};
-  const settings = await prisma.payrollSettings.findFirst();
+  const user = await requireUser();
+  const settings = await prisma.payrollSettings.findFirst({ where: { shopId: user.shop.id } });
 
   return (
     <div>
@@ -19,12 +21,15 @@ export default async function SettingsPage({
       <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
         <section className="panel p-5">
           <h2 className="text-lg font-semibold text-slate-950">Payroll Behavior</h2>
+          <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
+            Active shop branding: <span className="font-semibold text-slate-950">{user.shop.name}</span>
+          </div>
           <form action={savePayrollSettingsAction} className="mt-4 space-y-4">
             <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
               <input type="checkbox" name="autoGenerate" defaultChecked={settings?.autoGenerate ?? true} className="h-4 w-4 rounded border-slate-300" />
               Allow payroll periods to be created automatically when payroll is generated.
             </label>
-            <button className="rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700">Save Settings</button>
+            <button className="rounded-2xl bg-[#2f7d5b] px-4 py-3 text-sm font-semibold text-white hover:bg-[#25684b]">Save Settings</button>
           </form>
         </section>
 

@@ -2,6 +2,7 @@ import { EmployeeCardGrid } from "@/components/employee-card-grid";
 import { EmployeeCreateModal } from "@/components/employee-create-modal";
 import { PageHeader } from "@/components/page-header";
 import { EmployeeSearchForm } from "@/components/employee-search-form";
+import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export default async function EmployeesPage({
@@ -11,17 +12,21 @@ export default async function EmployeesPage({
 }) {
   const params = (await searchParams) ?? {};
   const search = params.search?.trim() || "";
+  const user = await requireUser();
 
   const employees = await prisma.employee.findMany({
-    where: search
-      ? {
-          OR: [
-            { fullName: { contains: search, mode: "insensitive" } },
-            { employeeCode: { contains: search, mode: "insensitive" } },
-            { position: { contains: search, mode: "insensitive" } }
-          ]
-        }
-      : undefined,
+    where: {
+      shopId: user.shop.id,
+      ...(search
+        ? {
+            OR: [
+              { fullName: { contains: search, mode: "insensitive" } },
+              { employeeCode: { contains: search, mode: "insensitive" } },
+              { position: { contains: search, mode: "insensitive" } }
+            ]
+          }
+        : {})
+    },
     include: {
       attendanceRecords: {
         orderBy: { date: "desc" },

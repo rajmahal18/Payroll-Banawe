@@ -29,11 +29,11 @@ export function PayrollScheduleFields({ initialValues }: { initialValues?: Payro
 
   return (
     <div className="md:col-span-2">
-      <div className="rounded-[24px] border border-[rgba(226,219,211,0.84)] bg-[rgba(250,247,242,0.8)] p-4">
+      <div className="rounded-[22px] border border-[rgba(226,219,211,0.84)] bg-[rgba(250,247,242,0.8)] p-3.5">
         <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">Payroll Schedule</div>
-        <p className="mt-1 text-sm text-[#7a7168]">Each employee can follow their own sahod cycle.</p>
+        <p className="mt-0.5 text-sm text-[#7a7168]">Each employee can follow their own sahod cycle.</p>
 
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">Frequency</label>
             <select
@@ -103,7 +103,7 @@ export function PayrollScheduleFields({ initialValues }: { initialValues?: Payro
           ) : null}
         </div>
 
-        <div className="mt-3 rounded-2xl bg-white/80 px-3 py-2 text-xs text-[#7a7168]">
+        <div className="mt-2.5 rounded-2xl bg-white/80 px-3 py-2 text-xs text-[#7a7168]">
           {payrollFrequency === PayrollFrequency.DAILY
             ? "This employee can be included in payroll every day."
             : payrollFrequency === PayrollFrequency.WEEKLY

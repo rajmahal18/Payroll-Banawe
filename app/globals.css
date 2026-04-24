@@ -4,16 +4,16 @@
 
 :root {
   color-scheme: light;
-  --background: #fbfaf7;
-  --background-soft: #f6f2eb;
-  --background-muted: #f1f5f3;
-  --surface: rgba(255, 252, 247, 0.9);
-  --surface-strong: rgba(255, 255, 253, 0.96);
-  --border: rgba(218, 210, 200, 0.72);
-  --foreground: #342f2b;
-  --muted: #756d66;
-  --accent: #5f9f91;
-  --accent-soft: #e4f1ed;
+  --background: #edf7ec;
+  --background-soft: #dff0dc;
+  --background-muted: #cfe6c9;
+  --surface: rgba(250, 255, 247, 0.94);
+  --surface-strong: rgba(255, 255, 251, 0.98);
+  --border: rgba(131, 179, 128, 0.38);
+  --foreground: #173624;
+  --muted: #587060;
+  --accent: #16784f;
+  --accent-soft: #d7f2d4;
 }
 
 html,
@@ -21,16 +21,17 @@ body {
   min-height: 100%;
   max-width: 100%;
   overflow-x: hidden;
-  background: #f8f7f5;
+  background: #edf7ec;
   color: var(--foreground);
 }
 
 body {
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   background:
-    radial-gradient(circle at top left, rgba(253, 230, 206, 0.34) 0%, rgba(255, 255, 255, 0) 30%),
-    radial-gradient(circle at top right, rgba(218, 238, 232, 0.28) 0%, rgba(255, 255, 255, 0) 24%),
-    linear-gradient(180deg, #fcfbf8 0%, #f7f3ed 48%, #f3f5f2 100%);
+    radial-gradient(circle at 8% 8%, rgba(74, 222, 128, 0.24) 0%, rgba(74, 222, 128, 0) 30%),
+    radial-gradient(circle at 92% 5%, rgba(20, 184, 166, 0.16) 0%, rgba(20, 184, 166, 0) 28%),
+    radial-gradient(circle at 50% 105%, rgba(132, 204, 22, 0.20) 0%, rgba(132, 204, 22, 0) 35%),
+    linear-gradient(180deg, #f7fff3 0%, #edf8e9 46%, #dcefd8 100%);
 }
 
 * {
@@ -48,34 +49,68 @@ select,
 textarea {
   @apply w-full rounded-2xl border bg-white px-3 py-2.5 text-sm text-stone-900 outline-none transition placeholder:text-stone-400 focus:ring-2;
   background-color: rgba(255, 255, 255, 0.95);
-  border-color: rgba(214, 205, 194, 0.86);
+  border-color: rgba(132, 179, 130, 0.48);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 input:not([type="checkbox"]):not([type="radio"]):focus,
 select:focus,
 textarea:focus {
-  border-color: rgba(95, 159, 145, 0.68);
-  box-shadow: 0 0 0 4px rgba(228, 241, 237, 0.95);
+  border-color: rgba(22, 120, 79, 0.68);
+  box-shadow: 0 0 0 4px rgba(215, 242, 212, 0.95);
 }
 
 input[type="checkbox"],
 input[type="radio"] {
   @apply border bg-white outline-none transition focus:ring-2;
-  border-color: rgba(214, 205, 194, 0.92);
+  border-color: rgba(132, 179, 130, 0.58);
 }
 
 input[type="checkbox"]:focus,
 input[type="radio"]:focus {
-  box-shadow: 0 0 0 4px rgba(228, 241, 237, 0.95);
+  box-shadow: 0 0 0 4px rgba(215, 242, 212, 0.95);
 }
 
 button {
   @apply transition;
 }
 
+button[data-loading="true"],
+input[type="submit"][data-loading="true"] {
+  position: relative;
+  pointer-events: none;
+  cursor: wait;
+  opacity: 0.88;
+}
+
+button[data-loading="true"]::after,
+input[type="submit"][data-loading="true"]::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 0.9rem;
+  width: 0.95rem;
+  height: 0.95rem;
+  margin-top: -0.475rem;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  animation: button-spin 0.7s linear infinite;
+}
+
+button[data-loading="true"][aria-busy="true"],
+input[type="submit"][data-loading="true"][aria-busy="true"] {
+  padding-right: 2.6rem;
+}
+
+@keyframes button-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 ::selection {
-  background: #7aaea2;
+  background: #16784f;
   color: white;
 }
 
@@ -87,7 +122,7 @@ button {
 ::-webkit-scrollbar-thumb {
   border-radius: 999px;
   border: 2px solid transparent;
-  background: rgba(168, 162, 158, 0.55);
+  background: rgba(47, 125, 91, 0.55);
   background-clip: padding-box;
 }
 
@@ -96,8 +131,8 @@ button {
 }
 
 .table-shell {
-  @apply overflow-x-auto rounded-[24px] border bg-white shadow-[0_18px_42px_-34px_rgba(108,89,70,0.16)] backdrop-blur;
-  background-color: rgba(255, 255, 255, 0.92);
+  @apply overflow-x-auto rounded-[24px] border bg-white shadow-[0_18px_42px_-34px_rgba(22,78,43,0.20)] backdrop-blur;
+  background-color: rgba(250, 255, 247, 0.94);
 }
 
 .table-shell table {
@@ -106,21 +141,21 @@ button {
 
 .table-shell th {
   @apply border-b px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em];
-  background: rgba(246, 242, 235, 0.92);
-  color: #81756b;
+  background: rgba(225, 243, 219, 0.92);
+  color: #2f6f45;
 }
 
 .table-shell td {
   @apply border-b px-4 py-3 align-top text-stone-800;
-  border-color: rgba(236, 230, 223, 0.86);
+  border-color: rgba(190, 220, 184, 0.72);
 }
 
 .panel {
-  @apply rounded-[26px] border bg-[rgba(255,253,249,0.9)] shadow-[0_18px_48px_-38px_rgba(108,89,70,0.16)] backdrop-blur;
+  @apply rounded-[26px] border bg-[rgba(250,255,247,0.92)] shadow-[0_18px_48px_-38px_rgba(22,78,43,0.20)] backdrop-blur;
 }
 
 .metric {
-  @apply rounded-[24px] border bg-[rgba(255,253,249,0.9)] p-4 shadow-[0_18px_42px_-36px_rgba(108,89,70,0.14)] backdrop-blur;
+  @apply rounded-[24px] border bg-[rgba(250,255,247,0.92)] p-4 shadow-[0_18px_42px_-36px_rgba(22,78,43,0.18)] backdrop-blur;
 }
 
 .note-toggle summary::-webkit-details-marker {

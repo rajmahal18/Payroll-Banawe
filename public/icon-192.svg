@@ -1,6 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192" fill="none">
-  <rect width="192" height="192" rx="44" fill="#2563EB"/>
-  <rect x="36" y="36" width="120" height="120" rx="26" fill="white" fill-opacity="0.16"/>
-  <path d="M62 120V78C62 69.1634 69.1634 62 78 62H114C122.837 62 130 69.1634 130 78V120" stroke="white" stroke-width="14" stroke-linecap="round"/>
-  <path d="M74 96L89 111L118 82" stroke="white" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+<svg width="192" height="192" viewBox="0 0 192 192" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="192" height="192" rx="44" fill="#16784F"/>
+  <circle cx="52" cy="46" r="34" fill="#84CC16" fill-opacity="0.42"/>
+  <path d="M38 129C51 84 84 51 143 38C136 96 103 130 38 129Z" fill="#D7F2D4"/>
+  <path d="M57 119C84 99 108 75 134 48" stroke="#16784F" stroke-width="8" stroke-linecap="round"/>
+  <path d="M50 145H142" stroke="#ECFCCB" stroke-width="12" stroke-linecap="round"/>
+  <text x="96" y="106" text-anchor="middle" font-family="Arial, sans-serif" font-size="38" font-weight="800" fill="white">RV</text>
 </svg>

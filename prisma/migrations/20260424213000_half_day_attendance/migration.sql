@@ -1,0 +1,4 @@
+ALTER TYPE "AttendanceStatus" ADD VALUE 'HALF_DAY';
+
+ALTER TABLE "PayrollEntry"
+ADD COLUMN "daysHalf" INTEGER NOT NULL DEFAULT 0;

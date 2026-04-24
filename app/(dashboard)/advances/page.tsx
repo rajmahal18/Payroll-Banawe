@@ -1,13 +1,18 @@
 import { createAdvanceAction } from "@/app/actions";
 import { PageHeader } from "@/components/page-header";
+import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatDate, formatMoney, toDateInputValue } from "@/lib/utils";
 
 export default async function AdvancesPage() {
-  const [employees, advances] = await Promise.all([
-    prisma.employee.findMany({ where: { status: "ACTIVE" }, orderBy: { fullName: "asc" } }),
-    prisma.advance.findMany({ include: { employee: true }, orderBy: [{ status: "asc" }, { date: "desc" }] })
-  ]);
+  const user = await requireUser();
+  const employees = await prisma.employee.findMany({ where: { shopId: user.shop.id, status: "ACTIVE" }, orderBy: { fullName: "asc" } });
+  const employeeIds = employees.map((employee) => employee.id);
+  const advances = await prisma.advance.findMany({
+    where: { employeeId: { in: employeeIds } },
+    include: { employee: true },
+    orderBy: [{ status: "asc" }, { date: "desc" }]
+  });
 
   return (
     <div>
@@ -37,10 +42,17 @@ export default async function AdvancesPage() {
               </div>
             </div>
             <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Deduct Per Payroll</label>
+              <input name="deductionPerPayroll" type="number" min="0" step="0.01" placeholder="Optional partial deduction amount" />
+              <p className="mt-1 text-xs text-slate-500">
+                Example: set `1000` on a `2000` advance to deduct `1000` this sahod and `1000` on the next one.
+              </p>
+            </div>
+            <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Reason</label>
               <textarea name="reason" rows={3} placeholder="Optional reason" />
             </div>
-            <button className="rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700">Save Advance</button>
+            <button className="rounded-2xl bg-[#2f7d5b] px-4 py-3 text-sm font-semibold text-white hover:bg-[#25684b]">Save Advance</button>
           </form>
         </section>
 
@@ -51,6 +63,7 @@ export default async function AdvancesPage() {
                 <th>Employee</th>
                 <th>Date</th>
                 <th>Amount</th>
+                <th>Per Payroll</th>
                 <th>Remaining</th>
                 <th>Status</th>
                 <th>Reason</th>
@@ -62,6 +75,7 @@ export default async function AdvancesPage() {
                   <td>{advance.employee.fullName}</td>
                   <td>{formatDate(advance.date)}</td>
                   <td>{formatMoney(advance.amount.toString())}</td>
+                  <td>{advance.deductionPerPayroll ? formatMoney(advance.deductionPerPayroll.toString()) : "Full"}</td>
                   <td>{formatMoney(advance.remainingBalance.toString())}</td>
                   <td>{advance.status}</td>
                   <td>{advance.reason || "—"}</td>

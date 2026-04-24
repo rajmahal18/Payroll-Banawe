@@ -28,6 +28,14 @@ export function toDateInputValue(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
+export function parseDateInputValue(value: string) {
+  const [year, month, day] = value.split("-").map((part) => Number(part));
+  if (!year || !month || !day) {
+    return new Date(value);
+  }
+  return new Date(year, month - 1, day);
+}
+
 export function startOfDayLocal(date: Date) {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);

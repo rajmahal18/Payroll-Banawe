@@ -12,8 +12,8 @@ const config: Config = {
         surface: "#f6f8fc",
         ink: "#172033",
         primary: {
-          DEFAULT: "#2563eb",
-          soft: "#dbeafe"
+          DEFAULT: "#2f7d5b",
+          soft: "#e1f0dc"
         },
         success: {
           DEFAULT: "#15803d",

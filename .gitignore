@@ -58,3 +58,5 @@ public/sw.js.map
 # misc
 
 *.log
+
+*.zip

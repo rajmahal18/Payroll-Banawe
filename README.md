@@ -1,6 +1,6 @@
-# Absensya Payroll MVP
+# RVerse Payroll MVP
 
-Owner-first payroll and attendance PWA built with Next.js, React, TypeScript, Prisma, and Postgres.
+RVerse Payroll for attendance, absences, advances, and shop payroll operations built with Next.js, React, TypeScript, Prisma, and Postgres.
 
 ## Included MVP features
 

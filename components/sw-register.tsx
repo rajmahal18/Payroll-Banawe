@@ -5,7 +5,19 @@ import { useEffect } from "react";
 export function SWRegister() {
   useEffect(() => {
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
-    navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+
+    const registerSW = () => {
+      navigator.serviceWorker
+        .register("/sw.js", { scope: "/" })
+        .then((registration) => registration.update().catch(() => undefined))
+        .catch(() => undefined);
+    };
+
+    window.addEventListener("load", registerSW);
+
+    return () => {
+      window.removeEventListener("load", registerSW);
+    };
   }, []);
 
   return null;
