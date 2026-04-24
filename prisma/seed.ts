@@ -36,6 +36,7 @@ async function main() {
         shopId: shop.id,
         frequency: PayrollFrequency.WEEKLY,
         weeklyPayDay: 5,
+        everyNDays: null,
         autoGenerate: true
       }
     });

@@ -1,0 +1,7 @@
+ALTER TYPE "PayrollFrequency" ADD VALUE IF NOT EXISTS 'EVERY_N_DAYS';
+
+ALTER TABLE "Employee"
+ADD COLUMN "everyNDays" INTEGER;
+
+ALTER TABLE "PayrollSettings"
+ADD COLUMN "everyNDays" INTEGER;

@@ -17,7 +17,7 @@ export type PayrollNavItem = {
 export const payrollNavItems: PayrollNavItem[] = [
   { href: "/dashboard", label: "Home", icon: LayoutDashboard, mobile: true },
   { href: "/employees", label: "People", icon: Users, mobile: true },
-  { href: "/advances", label: "Advances", icon: CircleDollarSign, mobile: true },
+  { href: "/advances", label: "Adjustments", icon: CircleDollarSign, mobile: true },
   { href: "/payroll", label: "Payroll", icon: ClipboardList, mobile: true },
   { href: "/settings", label: "Settings", icon: Settings }
 ];

@@ -20,7 +20,9 @@ type EmployeeCardItem = {
   monthlyPayDay: number | null;
   twiceMonthlyDayOne: number | null;
   twiceMonthlyDayTwo: number | null;
+  everyNDays: number | null;
   startDate: string | null;
+  lastPaidDate: string | null;
   contactNumber: string | null;
   notes: string | null;
   createdAt: string;
@@ -73,7 +75,7 @@ function formatOrdinal(day: number) {
 
 function describeEmployeePayrollSchedule(employee: Pick<
   EmployeeCardItem,
-  "payrollFrequency" | "weeklyPayDay" | "monthlyPayDay" | "twiceMonthlyDayOne" | "twiceMonthlyDayTwo"
+  "payrollFrequency" | "weeklyPayDay" | "monthlyPayDay" | "twiceMonthlyDayOne" | "twiceMonthlyDayTwo" | "everyNDays"
 >) {
   switch (employee.payrollFrequency) {
     case PayrollFrequency.DAILY:
@@ -87,6 +89,8 @@ function describeEmployeePayrollSchedule(employee: Pick<
       const second = Math.max(employee.twiceMonthlyDayOne ?? 15, employee.twiceMonthlyDayTwo ?? 30);
       return `Twice monthly every ${formatOrdinal(first)} and ${formatOrdinal(second)}`;
     }
+    case PayrollFrequency.EVERY_N_DAYS:
+      return `Every ${employee.everyNDays ?? 7} days`;
     default:
       return "Payroll schedule not set";
   }
@@ -128,7 +132,7 @@ function EmployeeEditModal({
 
   return createPortal(
     <div className="fixed inset-0 z-[130] flex items-end justify-center bg-[rgba(52,47,43,0.34)] p-3 sm:items-center sm:p-6">
-      <div className="w-full max-w-3xl rounded-[28px] border border-[rgba(88,150,88,0.36)] bg-[rgba(250,255,247,0.98)] shadow-[0_28px_60px_-30px_rgba(22,78,43,0.24)]">
+      <div className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] border border-[rgba(88,150,88,0.36)] bg-[rgba(250,255,247,0.98)] shadow-[0_28px_60px_-30px_rgba(22,78,43,0.24)] sm:max-h-[calc(100vh-3rem)]">
         <div className="flex items-start justify-between gap-4 border-b border-[rgba(226,219,211,0.82)] px-5 py-4">
           <div>
             <h2 className="text-lg font-semibold text-stone-950">Edit Employee</h2>
@@ -144,61 +148,66 @@ function EmployeeEditModal({
           </button>
         </div>
 
-        <form action={updateEmployeeAction} className="grid gap-4 px-5 py-5 md:grid-cols-2">
-          <input type="hidden" name="employeeId" value={employee.id} />
-          <div className="md:col-span-2">
-            <label className="mb-1 block text-sm font-medium text-slate-700">Employee Code</label>
-            <div className="rounded-2xl border border-[rgba(88,150,88,0.36)] bg-[rgba(229,245,224,0.86)] px-4 py-3 text-sm font-semibold text-stone-900">
-              {employee.employeeCode}
+        <div className="overflow-y-auto px-5 py-4">
+          <form action={updateEmployeeAction} className="grid gap-3 xl:grid-cols-3">
+            <input type="hidden" name="employeeId" value={employee.id} />
+            <div className="xl:col-span-3">
+              <label className="mb-1 block text-sm font-medium text-slate-700">Employee Code</label>
+              <div className="rounded-2xl border border-[rgba(88,150,88,0.36)] bg-[rgba(229,245,224,0.86)] px-4 py-2.5 text-sm font-semibold text-stone-900">
+                {employee.employeeCode}
+              </div>
+              <p className="mt-1 text-xs text-[#7a7168]">Employee codes are generated automatically per shop and can't be edited manually.</p>
             </div>
-            <p className="mt-1 text-xs text-[#7a7168]">Employee codes are generated automatically per shop and can't be edited manually.</p>
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Full Name</label>
-            <input name="fullName" defaultValue={employee.fullName} required />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Position</label>
-            <input name="position" defaultValue={employee.position || ""} />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Daily Rate</label>
-            <input name="dailyRate" type="number" min="0" step="0.01" defaultValue={employee.dailyRate} required />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Contact Number</label>
-            <input name="contactNumber" defaultValue={employee.contactNumber || ""} />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Start Date</label>
-            <input name="startDate" type="date" defaultValue={employee.startDate || ""} />
-          </div>
-          <PayrollScheduleFields
-            initialValues={{
-              payrollFrequency: employee.payrollFrequency,
-              weeklyPayDay: employee.weeklyPayDay,
-              monthlyPayDay: employee.monthlyPayDay,
-              twiceMonthlyDayOne: employee.twiceMonthlyDayOne,
-              twiceMonthlyDayTwo: employee.twiceMonthlyDayTwo
-            }}
-          />
-          <div className="md:col-span-2">
-            <label className="mb-1 block text-sm font-medium text-slate-700">Notes</label>
-            <textarea name="notes" rows={3} defaultValue={employee.notes || ""} />
-          </div>
-          <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end md:col-span-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-2xl border border-[rgba(88,150,88,0.36)] bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-[#edf8e9]"
-            >
-              Cancel
-            </button>
-            <button className="rounded-2xl bg-[#6f9c90] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#628b81]">
-              Save Changes
-            </button>
-          </div>
-        </form>
+            <div className="xl:col-span-2">
+              <label className="mb-1 block text-sm font-medium text-slate-700">Full Name</label>
+              <input name="fullName" defaultValue={employee.fullName} required />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Position</label>
+              <input name="position" defaultValue={employee.position || ""} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Daily Rate</label>
+              <input name="dailyRate" type="number" min="0" step="0.01" defaultValue={employee.dailyRate} required />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Contact Number</label>
+              <input name="contactNumber" defaultValue={employee.contactNumber || ""} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Start Date</label>
+              <input name="startDate" type="date" defaultValue={employee.startDate || ""} />
+            </div>
+            <PayrollScheduleFields
+              compact
+              initialValues={{
+                payrollFrequency: employee.payrollFrequency,
+                weeklyPayDay: employee.weeklyPayDay,
+                monthlyPayDay: employee.monthlyPayDay,
+                twiceMonthlyDayOne: employee.twiceMonthlyDayOne,
+                twiceMonthlyDayTwo: employee.twiceMonthlyDayTwo,
+                everyNDays: employee.everyNDays,
+                lastPaidDate: employee.lastPaidDate
+              }}
+            />
+            <div className="xl:col-span-3">
+              <label className="mb-1 block text-sm font-medium text-slate-700">Notes</label>
+              <textarea name="notes" rows={2} defaultValue={employee.notes || ""} />
+            </div>
+            <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end xl:col-span-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-2xl border border-[rgba(88,150,88,0.36)] bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-[#edf8e9]"
+              >
+                Cancel
+              </button>
+              <button className="rounded-2xl bg-[#6f9c90] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#628b81]">
+                Save Changes
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>,
     document.body
@@ -274,6 +283,10 @@ function EmployeeViewModal({
             <div className="rounded-[22px] border border-[rgba(226,219,211,0.82)] bg-[rgba(255,255,255,0.72)] p-4">
               <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">Employment Start</div>
               <div className="mt-1 text-sm font-semibold text-stone-950">{formatDateLabel(employee.startDate)}</div>
+            </div>
+            <div className="rounded-[22px] border border-[rgba(226,219,211,0.82)] bg-[rgba(255,255,255,0.72)] p-4">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">Last Paid</div>
+              <div className="mt-1 text-sm font-semibold text-stone-950">{formatDateLabel(employee.lastPaidDate)}</div>
             </div>
             <div className="rounded-[22px] border border-[rgba(226,219,211,0.82)] bg-[rgba(255,255,255,0.72)] p-4 sm:col-span-2">
               <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">Payroll Schedule</div>

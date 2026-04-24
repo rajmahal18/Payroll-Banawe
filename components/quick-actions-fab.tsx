@@ -5,7 +5,7 @@ import { useState } from "react";
 import { CircleDollarSign, Gift, Plus, ReceiptText, X } from "lucide-react";
 
 const actions = [
-  { href: "/bonuses", label: "Record Bonus", icon: Gift, tone: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  { href: "/advances?tab=bonuses", label: "Record Bonus", icon: Gift, tone: "bg-emerald-50 text-emerald-700 border-emerald-200" },
   { href: "/advances", label: "Record Advance", icon: CircleDollarSign, tone: "bg-lime-50 text-lime-700 border-lime-200" },
   { href: "/payroll", label: "Open Payroll", icon: ReceiptText, tone: "bg-[#edf7ef] text-[#2f7d5b] border-[#cfe9d6]" }
 ] as const;

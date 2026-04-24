@@ -36,6 +36,7 @@ enum PayrollFrequency {
   WEEKLY
   TWICE_MONTHLY
   MONTHLY
+  EVERY_N_DAYS
 }
 
 enum PayrollPeriodStatus {
@@ -78,8 +79,10 @@ model Employee {
   monthlyPayDay     Int?
   twiceMonthlyDayOne Int?
   twiceMonthlyDayTwo Int?
+  everyNDays        Int?
   status            EmployeeStatus     @default(ACTIVE)
   startDate         DateTime?
+  lastPaidDate      DateTime?
   contactNumber     String?
   notes             String?
   createdAt         DateTime           @default(now())
@@ -165,6 +168,7 @@ model PayrollSettings {
   monthlyPayDay      Int?
   twiceMonthlyDayOne Int?
   twiceMonthlyDayTwo Int?
+  everyNDays         Int?
   autoGenerate       Boolean          @default(true)
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt

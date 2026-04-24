@@ -9,7 +9,7 @@ import {
   getLedgerDeductionForPreview,
   getLivePayrollAttendanceMetrics
 } from "@/lib/payroll-live";
-import { describePayrollFrequency, getPayDateForDate, getPeriodForPayDate } from "@/lib/payroll";
+import { describePayrollFrequency, getPayDateForDate, getPeriodForPayDate, getTimelineRetentionDays } from "@/lib/payroll";
 import { prisma } from "@/lib/prisma";
 import { endOfDayLocal, parseDateInputValue, startOfDayLocal, toDateInputValue } from "@/lib/utils";
 
@@ -131,15 +131,19 @@ export default async function DashboardPage({
     })
     .sort((a, b) => a.payDate.getTime() - b.payDate.getTime());
 
-  const upcomingPayDates = Array.from(new Set(nextPayrollEvents.map((event) => toDateInputValue(event.payDate))));
-  const recentPaidPeriods = await prisma.payrollPeriod.findMany({
+  const existingTimelinePeriods = await prisma.payrollPeriod.findMany({
     where: {
       shopId: user.shop.id,
-      status: "PAID",
-      payDate: {
-        gte: startOfDayLocal(subDays(todayStart, 7)),
-        lte: endOfDayLocal(todayStart)
-      }
+      OR: [
+        { status: { not: "PAID" } },
+        {
+          status: "PAID",
+          payDate: {
+            gte: startOfDayLocal(subDays(todayStart, 400)),
+            lte: endOfDayLocal(todayStart)
+          }
+        }
+      ]
     },
     include: {
       payrollEntries: {
@@ -157,13 +161,24 @@ export default async function DashboardPage({
       payDate: "desc"
     }
   });
+  const retainedTimelinePeriods = existingTimelinePeriods.filter((period) => {
+    if (period.status !== "PAID") {
+      return true;
+    }
+
+    const maxRetentionDays = period.payrollEntries.reduce((maxDays, entry) => {
+      return Math.max(maxDays, getTimelineRetentionDays(entry.employee, period.payDate));
+    }, 0);
+
+    return addDays(startOfDayLocal(period.payDate), maxRetentionDays) >= todayStart;
+  });
   const timelineRangeStartCandidates = [
     nextPayrollEvents[0]?.period.periodStart,
-    ...recentPaidPeriods.map((period) => period.periodStart)
+    ...retainedTimelinePeriods.map((period) => period.periodStart)
   ].filter((value): value is Date => Boolean(value));
   const timelineRangeEndCandidates = [
     nextPayrollEvents[nextPayrollEvents.length - 1]?.period.periodEnd,
-    ...recentPaidPeriods.map((period) => period.periodEnd)
+    ...retainedTimelinePeriods.map((period) => period.periodEnd)
   ].filter((value): value is Date => Boolean(value));
   const timelineRangeStart = timelineRangeStartCandidates.length
     ? timelineRangeStartCandidates.reduce((min, value) => (value < min ? value : min))
@@ -174,7 +189,7 @@ export default async function DashboardPage({
   const timelineEmployeeIds = Array.from(
     new Set([
       ...nextPayrollEvents.map((event) => event.employee.id),
-      ...recentPaidPeriods.flatMap((period) => period.payrollEntries.map((entry) => entry.employeeId))
+      ...retainedTimelinePeriods.flatMap((period) => period.payrollEntries.map((entry) => entry.employeeId))
     ])
   );
   const payrollWindowAttendance =
@@ -189,23 +204,8 @@ export default async function DashboardPage({
           }
         })
       : [];
-  const existingUpcomingPeriods = upcomingPayDates.length
-    ? await prisma.payrollPeriod.findMany({
-        where: {
-          shopId: user.shop.id,
-          payDate: {
-            gte: startOfDayLocal(todayStart),
-            lte: endOfDayLocal(addDays(todayStart, 60))
-          }
-        },
-        select: {
-          payDate: true,
-          status: true
-        }
-      })
-    : [];
   const periodStatusByDate = new Map<string, string[]>();
-  existingUpcomingPeriods.forEach((period) => {
+  existingTimelinePeriods.forEach((period) => {
     const key = toDateInputValue(period.payDate);
     const current = periodStatusByDate.get(key) ?? [];
     current.push(period.status);
@@ -321,7 +321,9 @@ export default async function DashboardPage({
             ? "Due tomorrow"
             : dueOffset > 1
               ? `Due in ${dueOffset} days`
-              : format(event.payDate, "EEE");
+              : dueOffset < 0
+                ? `Overdue by ${Math.abs(dueOffset)} day${Math.abs(dueOffset) > 1 ? "s" : ""}`
+                : format(event.payDate, "EEE");
         const existing = groups.get(key) ?? {
           id: key,
           payDateValue: payDateKey,
@@ -409,46 +411,127 @@ export default async function DashboardPage({
       }>()
     ).values()
   );
-  const recentPaidTimelineEntries = recentPaidPeriods.map((period) => ({
-    id: `paid-${period.id}`,
-    payDateValue: toDateInputValue(period.payDate),
-    payDateLabel: format(period.payDate, "MMM d, yyyy"),
-    dueLabel: "Paid",
-    isPaid: true,
-    expectedTotal: period.payrollEntries.reduce((sum, entry) => sum + Number(entry.netPay), 0),
-    employeeNames: period.payrollEntries.map((entry) => entry.employee.fullName),
-    details: period.payrollEntries.map((entry) => {
-      const liveMetrics = getLivePayrollAttendanceMetrics({
-        employee: entry.employee,
-        periodStart: period.periodStart,
-        periodEnd: period.periodEnd,
-        attendanceRecords: attendanceByEmployee.get(entry.employee.id) ?? []
-      });
+  const actualTimelineEntries = Array.from(
+    retainedTimelinePeriods.reduce(
+      (groups, period) => {
+        const payDateValue = toDateInputValue(period.payDate);
+        const dueOffset = differenceInCalendarDays(startOfDayLocal(period.payDate), todayStart);
+        const isPaid = period.status === "PAID";
+        const dueLabel = isPaid
+          ? "Paid"
+          : isToday(period.payDate)
+            ? "Today"
+            : isTomorrow(period.payDate)
+              ? "Due tomorrow"
+              : dueOffset > 1
+                ? `Due in ${dueOffset} days`
+                : dueOffset < 0
+                  ? `Overdue by ${Math.abs(dueOffset)} day${Math.abs(dueOffset) > 1 ? "s" : ""}`
+                  : format(period.payDate, "EEE");
 
-      return {
-        employeeId: entry.employee.id,
-        employeeName: entry.employee.fullName,
-        employeeCode: entry.employee.employeeCode,
-        position: entry.employee.position,
-        frequencyLabel: describePayrollFrequency(entry.employee),
-        periodLabel: period.label.replace(/^Payroll - /, ""),
-        absentDates: liveMetrics.absentDates.map((date) => toDateInputValue(date)),
-        halfDayDates: liveMetrics.halfDayDates.map((date) => toDateInputValue(date)),
-        daysAbsent: entry.daysAbsent,
-        daysHalf: "daysHalf" in entry ? Number(entry.daysHalf ?? 0) : 0,
-        estimatedDays: entry.daysPresent,
-        paidDayUnits: entry.daysPresent + ("daysHalf" in entry ? Number(entry.daysHalf ?? 0) : 0) * 0.5,
-        dailyRate: Number(entry.employee.dailyRate),
-        grossPay: Number(entry.grossPay),
-        bonusesAdded: "totalBonusesAdded" in entry ? Number(entry.totalBonusesAdded ?? 0) : 0,
-        advancesDeducted: Number(entry.totalAdvancesDeducted),
-        payablesDeducted: Number(entry.totalPayablesDeducted),
-        expectedAmount: Number(entry.netPay)
-      };
-    })
-  }));
-  const mergedTimelineEntries = [...recentPaidTimelineEntries, ...payrollTimelineEntries]
-    .filter((entry, index, collection) => collection.findIndex((candidate) => candidate.payDateValue === entry.payDateValue) === index)
+        const existing = groups.get(payDateValue) ?? {
+          id: `actual-${payDateValue}`,
+          payDateValue,
+          payDateLabel: format(period.payDate, "MMM d, yyyy"),
+          dueLabel,
+          isPaid,
+          expectedTotal: 0,
+          employeeNames: [] as string[],
+          details: [] as Array<{
+            employeeId: string;
+            employeeName: string;
+            employeeCode: string;
+            position: string | null;
+            frequencyLabel: string;
+            periodLabel: string;
+            absentDates: string[];
+            halfDayDates: string[];
+            daysAbsent: number;
+            daysHalf: number;
+            estimatedDays: number;
+            paidDayUnits: number;
+            dailyRate: number;
+            grossPay: number;
+            bonusesAdded: number;
+            advancesDeducted: number;
+            payablesDeducted: number;
+            expectedAmount: number;
+          }>
+        };
+
+        existing.isPaid = existing.isPaid && isPaid;
+        if (!existing.isPaid) {
+          existing.dueLabel = dueLabel;
+        }
+
+        period.payrollEntries.forEach((entry) => {
+          const liveMetrics = getLivePayrollAttendanceMetrics({
+            employee: entry.employee,
+            periodStart: period.periodStart,
+            periodEnd: period.periodEnd,
+            attendanceRecords: attendanceByEmployee.get(entry.employee.id) ?? []
+          });
+
+          existing.expectedTotal += Number(entry.netPay);
+          existing.employeeNames.push(entry.employee.fullName);
+          existing.details.push({
+            employeeId: entry.employee.id,
+            employeeName: entry.employee.fullName,
+            employeeCode: entry.employee.employeeCode,
+            position: entry.employee.position,
+            frequencyLabel: describePayrollFrequency(entry.employee),
+            periodLabel: period.label.replace(/^Payroll - /, ""),
+            absentDates: liveMetrics.absentDates.map((date) => toDateInputValue(date)),
+            halfDayDates: liveMetrics.halfDayDates.map((date) => toDateInputValue(date)),
+            daysAbsent: entry.daysAbsent,
+            daysHalf: "daysHalf" in entry ? Number(entry.daysHalf ?? 0) : 0,
+            estimatedDays: entry.daysPresent,
+            paidDayUnits: entry.daysPresent + ("daysHalf" in entry ? Number(entry.daysHalf ?? 0) : 0) * 0.5,
+            dailyRate: Number(entry.employee.dailyRate),
+            grossPay: Number(entry.grossPay),
+            bonusesAdded: "totalBonusesAdded" in entry ? Number(entry.totalBonusesAdded ?? 0) : 0,
+            advancesDeducted: Number(entry.totalAdvancesDeducted),
+            payablesDeducted: Number(entry.totalPayablesDeducted),
+            expectedAmount: Number(entry.netPay)
+          });
+        });
+
+        groups.set(payDateValue, existing);
+        return groups;
+      },
+      new Map<string, {
+        id: string;
+        payDateValue: string;
+        payDateLabel: string;
+        dueLabel: string;
+        isPaid: boolean;
+        expectedTotal: number;
+        employeeNames: string[];
+        details: Array<{
+          employeeId: string;
+          employeeName: string;
+          employeeCode: string;
+          position: string | null;
+          frequencyLabel: string;
+          periodLabel: string;
+          absentDates: string[];
+          halfDayDates: string[];
+          daysAbsent: number;
+          daysHalf: number;
+          estimatedDays: number;
+          paidDayUnits: number;
+          dailyRate: number;
+          grossPay: number;
+          bonusesAdded: number;
+          advancesDeducted: number;
+          payablesDeducted: number;
+          expectedAmount: number;
+        }>;
+      }>()
+    ).values()
+  );
+  const actualPayDates = new Set(actualTimelineEntries.map((entry) => entry.payDateValue));
+  const mergedTimelineEntries = [...actualTimelineEntries, ...payrollTimelineEntries.filter((entry) => !actualPayDates.has(entry.payDateValue))]
     .sort((a, b) => {
       if (a.isPaid !== b.isPaid) {
         return a.isPaid ? -1 : 1;
@@ -572,7 +655,7 @@ export default async function DashboardPage({
       </div>
 
       <div className="mt-4">
-        <PayrollDueTimeline entries={mergedTimelineEntries} />
+        <PayrollDueTimeline entries={mergedTimelineEntries} todayValue={toDateInputValue(todayStart)} />
       </div>
     </div>
   );

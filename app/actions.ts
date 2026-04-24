@@ -68,6 +68,7 @@ async function createEmployeeWithGeneratedCode({
   dailyRate,
   contactNumber,
   startDate,
+  lastPaidDate,
   notes,
   payrollSchedule
 }: {
@@ -77,6 +78,7 @@ async function createEmployeeWithGeneratedCode({
   dailyRate: number;
   contactNumber?: string;
   startDate?: string;
+  lastPaidDate?: string;
   notes?: string;
   payrollSchedule: ReturnType<typeof parseEmployeePayrollSchedule>;
 }) {
@@ -94,12 +96,14 @@ async function createEmployeeWithGeneratedCode({
             dailyRate: new Prisma.Decimal(dailyRate),
             contactNumber: contactNumber || null,
             startDate: startDate ? new Date(startDate) : null,
+            lastPaidDate: lastPaidDate ? new Date(lastPaidDate) : null,
             notes: notes || null,
             payrollFrequency: payrollSchedule.payrollFrequency,
             weeklyPayDay: payrollSchedule.weeklyPayDay,
             monthlyPayDay: payrollSchedule.monthlyPayDay,
             twiceMonthlyDayOne: payrollSchedule.twiceMonthlyDayOne,
             twiceMonthlyDayTwo: payrollSchedule.twiceMonthlyDayTwo,
+            everyNDays: payrollSchedule.everyNDays,
             status: EmployeeStatus.ACTIVE
           }
         });
@@ -402,6 +406,7 @@ function parseEmployeePayrollSchedule(formData: FormData) {
   const monthlyPayDay = formData.get("monthlyPayDay");
   const twiceDayOne = formData.get("twiceMonthlyDayOne");
   const twiceDayTwo = formData.get("twiceMonthlyDayTwo");
+  const everyNDays = formData.get("everyNDays");
   const parseNumericDay = (value: FormDataEntryValue | null, fallback: number, min: number, max: number) =>
     z.coerce.number().int().min(min).max(max).parse(value ?? fallback);
 
@@ -412,8 +417,24 @@ function parseEmployeePayrollSchedule(formData: FormData) {
     twiceMonthlyDayOne:
       payrollFrequency === PayrollFrequency.TWICE_MONTHLY ? parseNumericDay(twiceDayOne, 15, 1, 31) : null,
     twiceMonthlyDayTwo:
-      payrollFrequency === PayrollFrequency.TWICE_MONTHLY ? parseNumericDay(twiceDayTwo, 30, 1, 31) : null
+      payrollFrequency === PayrollFrequency.TWICE_MONTHLY ? parseNumericDay(twiceDayTwo, 30, 1, 31) : null,
+    everyNDays:
+      payrollFrequency === PayrollFrequency.EVERY_N_DAYS ? parseNumericDay(everyNDays, 7, 2, 365) : null
   };
+}
+
+function ensureEmployeeScheduleAnchor({
+  payrollFrequency,
+  startDate,
+  lastPaidDate
+}: {
+  payrollFrequency: PayrollFrequency;
+  startDate?: string;
+  lastPaidDate?: string;
+}) {
+  if (payrollFrequency === PayrollFrequency.EVERY_N_DAYS && !startDate && !lastPaidDate) {
+    throw new Error("Start date or last paid date is required for every N days payroll schedules.");
+  }
 }
 
 export async function loginAction(formData: FormData) {
@@ -495,6 +516,7 @@ export async function createEmployeeAction(formData: FormData) {
     dailyRate: moneySchema,
     contactNumber: z.string().optional(),
     startDate: z.string().optional(),
+    lastPaidDate: z.string().optional(),
     notes: z.string().optional()
   });
   const payrollSchedule = parseEmployeePayrollSchedule(formData);
@@ -505,7 +527,14 @@ export async function createEmployeeAction(formData: FormData) {
     dailyRate: formData.get("dailyRate"),
     contactNumber: formData.get("contactNumber"),
     startDate: formData.get("startDate"),
+    lastPaidDate: formData.get("lastPaidDate"),
     notes: formData.get("notes")
+  });
+
+  ensureEmployeeScheduleAnchor({
+    payrollFrequency: payrollSchedule.payrollFrequency,
+    startDate: parsed.startDate,
+    lastPaidDate: parsed.lastPaidDate
   });
 
   await createEmployeeWithGeneratedCode({
@@ -515,6 +544,7 @@ export async function createEmployeeAction(formData: FormData) {
     dailyRate: parsed.dailyRate,
     contactNumber: parsed.contactNumber,
     startDate: parsed.startDate,
+    lastPaidDate: parsed.lastPaidDate,
     notes: parsed.notes,
     payrollSchedule
   });
@@ -532,6 +562,7 @@ export async function updateEmployeeAction(formData: FormData) {
     dailyRate: moneySchema,
     contactNumber: z.string().optional(),
     startDate: z.string().optional(),
+    lastPaidDate: z.string().optional(),
     notes: z.string().optional()
   });
   const payrollSchedule = parseEmployeePayrollSchedule(formData);
@@ -543,7 +574,14 @@ export async function updateEmployeeAction(formData: FormData) {
     dailyRate: formData.get("dailyRate"),
     contactNumber: formData.get("contactNumber"),
     startDate: formData.get("startDate"),
+    lastPaidDate: formData.get("lastPaidDate"),
     notes: formData.get("notes")
+  });
+
+  ensureEmployeeScheduleAnchor({
+    payrollFrequency: payrollSchedule.payrollFrequency,
+    startDate: parsed.startDate,
+    lastPaidDate: parsed.lastPaidDate
   });
 
   await requireShopEmployee(user.shop.id, parsed.employeeId);
@@ -556,12 +594,14 @@ export async function updateEmployeeAction(formData: FormData) {
       dailyRate: new Prisma.Decimal(parsed.dailyRate),
       contactNumber: parsed.contactNumber || null,
       startDate: parsed.startDate ? new Date(parsed.startDate) : null,
+      lastPaidDate: parsed.lastPaidDate ? new Date(parsed.lastPaidDate) : null,
       notes: parsed.notes || null,
       payrollFrequency: payrollSchedule.payrollFrequency,
       weeklyPayDay: payrollSchedule.weeklyPayDay,
       monthlyPayDay: payrollSchedule.monthlyPayDay,
       twiceMonthlyDayOne: payrollSchedule.twiceMonthlyDayOne,
-      twiceMonthlyDayTwo: payrollSchedule.twiceMonthlyDayTwo
+      twiceMonthlyDayTwo: payrollSchedule.twiceMonthlyDayTwo,
+      everyNDays: payrollSchedule.everyNDays
     }
   });
 
@@ -686,8 +726,9 @@ export async function createAdvanceAction(formData: FormData) {
   });
 
   revalidatePath("/advances");
+  revalidatePath("/bonuses");
   revalidatePath("/dashboard");
-  redirect("/advances");
+  redirect("/advances?tab=advances");
 }
 
 export async function createBonusAction(formData: FormData) {
@@ -718,10 +759,159 @@ export async function createBonusAction(formData: FormData) {
     }
   });
 
+  revalidatePath("/advances");
   revalidatePath("/bonuses");
   revalidatePath("/dashboard");
   revalidatePath("/payroll");
-  redirect("/bonuses");
+  redirect("/advances?tab=bonuses");
+}
+
+
+export async function updateAdvanceAction(formData: FormData) {
+  const user = await requireUser();
+  const schema = z.object({
+    advanceId: z.string().min(1),
+    employeeId: z.string().min(1),
+    date: z.string().min(1),
+    amount: moneySchema.positive(),
+    deductionPerPayroll: z
+      .union([z.literal(""), z.coerce.number().positive()])
+      .optional(),
+    reason: z.string().optional(),
+    status: z.nativeEnum(LedgerStatus)
+  });
+
+  const parsed = schema.parse({
+    advanceId: formData.get("advanceId"),
+    employeeId: formData.get("employeeId"),
+    date: formData.get("date"),
+    amount: formData.get("amount"),
+    deductionPerPayroll: formData.get("deductionPerPayroll"),
+    reason: formData.get("reason"),
+    status: formData.get("status")
+  });
+
+  const employee = await requireShopEmployee(user.shop.id, parsed.employeeId);
+  const existing = await prisma.advance.findFirstOrThrow({
+    where: {
+      id: parsed.advanceId,
+      employee: { shopId: user.shop.id }
+    }
+  });
+
+  const nextAmount = new Prisma.Decimal(parsed.amount);
+  const deductedAmount = existing.deductedAmount.greaterThan(nextAmount) ? nextAmount : existing.deductedAmount;
+  const remainingBalance = parsed.status === LedgerStatus.CANCELLED ? new Prisma.Decimal(0) : nextAmount.minus(deductedAmount);
+  const nextStatus = parsed.status === LedgerStatus.CANCELLED ? LedgerStatus.CANCELLED : remainingBalance.equals(0) ? LedgerStatus.CLOSED : parsed.status;
+
+  await prisma.advance.update({
+    where: { id: existing.id },
+    data: {
+      employeeId: employee.id,
+      date: new Date(parsed.date),
+      amount: nextAmount,
+      deductionPerPayroll:
+        parsed.deductionPerPayroll === "" || parsed.deductionPerPayroll == null
+          ? null
+          : new Prisma.Decimal(parsed.deductionPerPayroll),
+      deductedAmount,
+      remainingBalance,
+      reason: parsed.reason || null,
+      status: nextStatus
+    }
+  });
+
+  revalidatePath("/advances");
+  revalidatePath("/bonuses");
+  revalidatePath("/dashboard");
+  revalidatePath("/payroll");
+  redirect("/advances?tab=advances");
+}
+
+export async function deleteAdvanceAction(formData: FormData) {
+  const user = await requireUser();
+  const advanceId = z.string().min(1).parse(formData.get("advanceId"));
+
+  const existing = await prisma.advance.findFirstOrThrow({
+    where: {
+      id: advanceId,
+      employee: { shopId: user.shop.id }
+    }
+  });
+
+  await prisma.advance.delete({ where: { id: existing.id } });
+
+  revalidatePath("/advances");
+  revalidatePath("/bonuses");
+  revalidatePath("/dashboard");
+  revalidatePath("/payroll");
+  redirect("/advances?tab=advances");
+}
+
+export async function updateBonusAction(formData: FormData) {
+  const user = await requireUser();
+  const schema = z.object({
+    bonusId: z.string().min(1),
+    employeeId: z.string().min(1),
+    date: z.string().min(1),
+    amount: moneySchema.positive(),
+    reason: z.string().optional(),
+    status: z.nativeEnum(LedgerStatus)
+  });
+
+  const parsed = schema.parse({
+    bonusId: formData.get("bonusId"),
+    employeeId: formData.get("employeeId"),
+    date: formData.get("date"),
+    amount: formData.get("amount"),
+    reason: formData.get("reason"),
+    status: formData.get("status")
+  });
+
+  const employee = await requireShopEmployee(user.shop.id, parsed.employeeId);
+  const existing = await prisma.bonus.findFirstOrThrow({
+    where: {
+      id: parsed.bonusId,
+      employee: { shopId: user.shop.id }
+    }
+  });
+
+  await prisma.bonus.update({
+    where: { id: existing.id },
+    data: {
+      employeeId: employee.id,
+      date: new Date(parsed.date),
+      amount: new Prisma.Decimal(parsed.amount),
+      reason: parsed.reason || null,
+      status: parsed.status
+    }
+  });
+
+  revalidatePath("/advances");
+  revalidatePath("/bonuses");
+  revalidatePath("/dashboard");
+  revalidatePath("/payroll");
+  redirect("/advances?tab=bonuses");
+}
+
+export async function deleteBonusAction(formData: FormData) {
+  const user = await requireUser();
+  const bonusId = z.string().min(1).parse(formData.get("bonusId"));
+
+  const existing = await prisma.bonus.findFirstOrThrow({
+    where: {
+      id: bonusId,
+      employee: { shopId: user.shop.id }
+    }
+  });
+
+  await prisma.bonus.delete({ where: { id: existing.id } });
+
+  revalidatePath("/advances");
+  revalidatePath("/bonuses");
+  revalidatePath("/dashboard");
+  revalidatePath("/payroll");
+  redirect("/advances?tab=bonuses");
 }
 
 export async function createPayableAction(formData: FormData) {
@@ -885,7 +1075,46 @@ export async function markPayrollPaidForDateAction(formData: FormData) {
     }
   });
 
+  const paidEntries = await prisma.payrollEntry.findMany({
+    where: {
+      payrollPeriod: {
+        shopId: user.shop.id,
+        payDate: {
+          gte: startOfDayLocal(targetDate),
+          lte: endOfDayLocal(targetDate)
+        }
+      }
+    },
+    include: {
+      payrollPeriod: {
+        select: {
+          payDate: true
+        }
+      },
+      employee: {
+        select: {
+          id: true,
+          payrollFrequency: true
+        }
+      }
+    }
+  });
+
+  await prisma.$transaction(
+    paidEntries
+      .filter((entry) => entry.employee.payrollFrequency === PayrollFrequency.EVERY_N_DAYS)
+      .map((entry) =>
+        prisma.employee.update({
+          where: { id: entry.employee.id },
+          data: {
+            lastPaidDate: entry.payrollPeriod.payDate
+          }
+        })
+      )
+  );
+
   revalidatePath("/dashboard");
+  revalidatePath("/employees");
   revalidatePath("/payroll");
   redirect(`/dashboard?paid=1&date=${toDateInputValue(targetDate)}`);
 }

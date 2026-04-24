@@ -42,6 +42,14 @@ type TimelineEntry = {
   details: TimelineEmployeeDetail[];
 };
 
+function isOverdueEntry(entry: TimelineEntry) {
+  return !entry.isPaid && entry.dueLabel.toLowerCase().startsWith("overdue");
+}
+
+function isTodayEntry(entry: TimelineEntry) {
+  return !entry.isPaid && entry.dueLabel === "Today";
+}
+
 function PayrollTimelineModal({
   entry,
   open,
@@ -191,8 +199,20 @@ function PayrollTimelineModal({
   );
 }
 
-export function PayrollDueTimeline({ entries }: { entries: TimelineEntry[] }) {
+export function PayrollDueTimeline({ entries, todayValue }: { entries: TimelineEntry[]; todayValue: string }) {
   const [activeEntry, setActiveEntry] = useState<TimelineEntry | null>(null);
+  const todayDate = new Date(`${todayValue}T00:00:00`);
+  const todayLabel = formatDate(todayDate);
+  const hasTodayEntry = entries.some((entry) => entry.payDateValue === todayValue);
+  const firstFutureIndex = entries.findIndex((entry) => entry.payDateValue >= todayValue);
+  const markerIndex = hasTodayEntry ? -1 : firstFutureIndex === -1 ? entries.length : firstFutureIndex;
+  const timelineItems = hasTodayEntry
+    ? entries.map((entry) => ({ type: "entry" as const, entry }))
+    : [
+        ...entries.slice(0, markerIndex).map((entry) => ({ type: "entry" as const, entry })),
+        { type: "today" as const },
+        ...entries.slice(markerIndex).map((entry) => ({ type: "entry" as const, entry }))
+      ];
 
   return (
     <>
@@ -214,75 +234,137 @@ export function PayrollDueTimeline({ entries }: { entries: TimelineEntry[] }) {
         {entries.length ? (
           <div className="px-5 py-4">
             <div className="space-y-1">
-              {entries.map((entry, index) => (
-                <button
-                  key={entry.id}
-                  type="button"
-                  onClick={() => setActiveEntry(entry)}
-                  className={`group relative flex w-full flex-col gap-3 rounded-[24px] px-3 py-4 text-left transition sm:px-4 ${
-                    entry.isPaid
-                      ? "bg-[rgba(232,246,238,0.82)] hover:bg-[rgba(224,242,232,0.92)]"
-                      : index === 0
-                        ? "bg-[rgba(244,248,252,0.64)] hover:bg-[rgba(244,248,252,0.82)]"
-                        : "hover:bg-[rgba(244,248,252,0.76)]"
-                  } ${
-                    index === 0 && !entry.isPaid ? "bg-[rgba(244,248,252,0.64)]" : ""
-                  }`}
-                >
-                  {index !== entries.length - 1 ? (
-                    <span className="absolute left-[18px] top-[52px] h-[calc(100%-2.5rem)] w-px bg-[rgba(214,205,194,0.86)] sm:left-[19px]" />
-                  ) : null}
+              {timelineItems.map((item, index) => {
+                const showConnector = index !== timelineItems.length - 1;
 
-                  <div className="flex items-start gap-4">
-                    <div className={`relative z-[1] mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 bg-white shadow-sm ${entry.isPaid ? "border-emerald-500" : "border-[#0f92f2]"}`}>
-                      <span className={`h-2.5 w-2.5 rounded-full ${entry.isPaid ? "bg-emerald-500" : "bg-[#0f92f2]"}`} />
-                    </div>
+                if (item.type === "today") {
+                  return (
+                    <div
+                      key={`today-${todayValue}`}
+                      className="relative flex flex-col gap-3 rounded-[24px] bg-[rgba(232,244,255,0.68)] px-3 py-4 sm:px-4"
+                    >
+                      {showConnector ? (
+                        <span className="absolute left-[18px] top-[52px] h-[calc(100%-2.5rem)] w-px bg-[rgba(214,205,194,0.86)] sm:left-[19px]" />
+                      ) : null}
 
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                        <div className="min-w-0">
-                          <div className={`text-xl font-semibold tracking-[-0.03em] ${entry.isPaid ? "text-emerald-700" : "text-[#1988d8]"}`}>{entry.payDateLabel}</div>
-                          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[#6d756f]">
-                            <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${entry.isPaid ? "bg-emerald-50 text-emerald-700" : "bg-[rgba(232,244,255,0.88)] text-[#1677c5]"}`}>
-                              <WalletCards className="h-3.5 w-3.5" />
-                              {entry.isPaid ? "Paid Payroll" : "Sahod Day"}
-                            </span>
-                            <span className="truncate">
-                              {entry.employeeNames.join(", ")}
-                            </span>
-                          </div>
+                      <div className="flex items-start gap-4">
+                        <div className="relative z-[1] mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-[#0f92f2] bg-white shadow-sm">
+                          <span className="h-2.5 w-2.5 rounded-full bg-[#0f92f2]" />
                         </div>
 
-                        <div className="flex items-center justify-between gap-4 lg:min-w-[220px] lg:justify-end">
-                          <div className="text-left lg:text-right">
-                          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">Expected Total</div>
-                          <div className="mt-1 text-base font-semibold text-stone-950">{formatMoney(entry.expectedTotal)}</div>
-                        </div>
-                          <div className={`flex items-center gap-2 text-sm font-semibold ${entry.isPaid ? "text-emerald-700" : "text-[#1677c5]"}`}>
-                            <span>{entry.dueLabel}</span>
-                            <ChevronRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="min-w-0">
+                              <div className="text-xl font-semibold tracking-[-0.03em] text-[#1988d8]">{todayLabel}</div>
+                              <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[#6d756f]">
+                                <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(232,244,255,0.92)] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#1677c5]">
+                                  <WalletCards className="h-3.5 w-3.5" />
+                                  Today
+                                </span>
+                                <span className="truncate">You are here in the payroll timeline.</span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 text-sm font-semibold text-[#1677c5]">
+                              <span>Today</span>
+                            </div>
                           </div>
                         </div>
                       </div>
+                    </div>
+                  );
+                }
 
-                      <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-[#7a7168]">
-                        <span className="inline-flex items-center gap-1">
-                          <UsersRound className="h-3.5 w-3.5 text-[#6f9c90]" />
-                          {entry.details.length} employee{entry.details.length > 1 ? "s" : ""}
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <Coins className="h-3.5 w-3.5 text-[#d28b2d]" />
-                          Advances and deductions included
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <ReceiptText className="h-3.5 w-3.5 text-[#1988d8]" />
-                          Tap for breakdown
-                        </span>
+                const entry = item.entry;
+                const overdue = isOverdueEntry(entry);
+                const today = isTodayEntry(entry);
+
+                return (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    onClick={() => setActiveEntry(entry)}
+                    className={`group relative flex w-full flex-col gap-3 rounded-[24px] px-3 py-4 text-left transition sm:px-4 ${
+                      entry.isPaid
+                        ? "bg-[rgba(232,246,238,0.82)] hover:bg-[rgba(224,242,232,0.92)]"
+                        : overdue
+                          ? "bg-[rgba(255,241,236,0.82)] hover:bg-[rgba(255,235,228,0.92)]"
+                          : today || index === 0
+                            ? "bg-[rgba(244,248,252,0.64)] hover:bg-[rgba(244,248,252,0.82)]"
+                            : "hover:bg-[rgba(244,248,252,0.76)]"
+                    } ${
+                      index === 0 && !entry.isPaid && !overdue ? "bg-[rgba(244,248,252,0.64)]" : ""
+                    }`}
+                  >
+                    {showConnector ? (
+                      <span className="absolute left-[18px] top-[52px] h-[calc(100%-2.5rem)] w-px bg-[rgba(214,205,194,0.86)] sm:left-[19px]" />
+                    ) : null}
+
+                    <div className="flex items-start gap-4">
+                      <div className={`relative z-[1] mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 bg-white shadow-sm ${
+                        entry.isPaid ? "border-emerald-500" : overdue ? "border-[#ea580c]" : "border-[#0f92f2]"
+                      }`}>
+                        <span className={`h-2.5 w-2.5 rounded-full ${
+                          entry.isPaid ? "bg-emerald-500" : overdue ? "bg-[#ea580c]" : "bg-[#0f92f2]"
+                        }`} />
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                          <div className="min-w-0">
+                            <div className={`text-xl font-semibold tracking-[-0.03em] ${
+                              entry.isPaid ? "text-emerald-700" : overdue ? "text-[#ea580c]" : "text-[#1988d8]"
+                            }`}>{entry.payDateLabel}</div>
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[#6d756f]">
+                              <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${
+                                entry.isPaid
+                                  ? "bg-emerald-50 text-emerald-700"
+                                  : overdue
+                                    ? "bg-orange-50 text-[#ea580c]"
+                                    : "bg-[rgba(232,244,255,0.88)] text-[#1677c5]"
+                              }`}>
+                                <WalletCards className="h-3.5 w-3.5" />
+                                {entry.isPaid ? "Paid Payroll" : overdue ? "Overdue" : "Sahod Day"}
+                              </span>
+                              <span className="truncate">
+                                {entry.employeeNames.join(", ")}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between gap-4 lg:min-w-[220px] lg:justify-end">
+                            <div className="text-left lg:text-right">
+                              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">Expected Total</div>
+                              <div className="mt-1 text-base font-semibold text-stone-950">{formatMoney(entry.expectedTotal)}</div>
+                            </div>
+                            <div className={`flex items-center gap-2 text-sm font-semibold ${
+                              entry.isPaid ? "text-emerald-700" : overdue ? "text-[#ea580c]" : "text-[#1677c5]"
+                            }`}>
+                              <span>{entry.dueLabel}</span>
+                              <ChevronRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-[#7a7168]">
+                          <span className="inline-flex items-center gap-1">
+                            <UsersRound className="h-3.5 w-3.5 text-[#6f9c90]" />
+                            {entry.details.length} employee{entry.details.length > 1 ? "s" : ""}
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <Coins className="h-3.5 w-3.5 text-[#d28b2d]" />
+                            Advances and deductions included
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <ReceiptText className="h-3.5 w-3.5 text-[#1988d8]" />
+                            Tap for breakdown
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </button>
-              ))}
+                  </button>
+                );
+              })}
             </div>
           </div>
         ) : (

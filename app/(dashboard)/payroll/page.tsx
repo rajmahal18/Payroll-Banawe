@@ -95,7 +95,7 @@ export default async function PayrollPage({
         description="Generate payroll for a chosen pay date. Each employee is included only when their own payroll schedule is due."
         action={
           <Link
-            href="/bonuses"
+            href="/advances?tab=bonuses"
             className="inline-flex items-center rounded-2xl border border-[rgba(88,150,88,0.36)] bg-[rgba(250,255,247,0.95)] px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-white hover:text-stone-950"
           >
             Record Bonus

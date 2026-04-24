@@ -1,6 +1,7 @@
 import { PayrollFrequency } from "@prisma/client";
 import {
   addDays,
+  differenceInCalendarDays,
   endOfMonth,
   format,
   getDate,
@@ -8,6 +9,7 @@ import {
   isSameDay,
   lastDayOfMonth,
   setDate,
+  startOfDay,
   startOfMonth,
   subDays
 } from "date-fns";
@@ -25,6 +27,9 @@ export type PayrollScheduleLike = {
   monthlyPayDay: number | null;
   twiceMonthlyDayOne: number | null;
   twiceMonthlyDayTwo: number | null;
+  everyNDays?: number | null;
+  startDate?: Date | null;
+  lastPaidDate?: Date | null;
 };
 
 function clampDay(day: number, referenceDate: Date) {
@@ -33,6 +38,10 @@ function clampDay(day: number, referenceDate: Date) {
 
 function safeDateInMonth(referenceDate: Date, day: number) {
   return setDate(startOfMonth(referenceDate), clampDay(day, referenceDate));
+}
+
+function getEveryNDaysAnchor(schedule: PayrollScheduleLike, fallbackDate: Date) {
+  return startOfDay(schedule.lastPaidDate ?? schedule.startDate ?? fallbackDate);
 }
 
 export function describePayrollFrequency(schedule: PayrollScheduleLike) {
@@ -45,6 +54,8 @@ export function describePayrollFrequency(schedule: PayrollScheduleLike) {
       return "Twice Monthly";
     case PayrollFrequency.MONTHLY:
       return "Monthly";
+    case PayrollFrequency.EVERY_N_DAYS:
+      return `Every ${schedule.everyNDays ?? 7} Days`;
     default:
       return "Payroll";
   }
@@ -75,6 +86,19 @@ export function getPayDateForDate(date: Date, schedule: PayrollScheduleLike): Da
       if (date <= firstDate) return firstDate;
       if (date <= secondDate) return secondDate;
       return safeDateInMonth(addDays(endOfMonth(date), 1), first);
+    }
+    case PayrollFrequency.EVERY_N_DAYS: {
+      const interval = Math.max(schedule.everyNDays ?? 7, 2);
+      const anchor = getEveryNDaysAnchor(schedule, date);
+      const hasPreviousPayout = Boolean(schedule.lastPaidDate);
+      const firstPayDate = hasPreviousPayout ? addDays(anchor, interval) : addDays(anchor, interval - 1);
+      if (date <= firstPayDate) {
+        return firstPayDate;
+      }
+
+      const daysSinceFirstPayDate = differenceInCalendarDays(startOfDay(date), firstPayDate);
+      const cyclesToAdvance = Math.ceil(daysSinceFirstPayDate / interval);
+      return addDays(firstPayDate, cyclesToAdvance * interval);
     }
     default:
       return date;
@@ -147,6 +171,19 @@ export function getPeriodForPayDate(payDate: Date, schedule: PayrollScheduleLike
         label: `${format(start, "MMM d")} - ${format(payDate, "MMM d, yyyy")}`
       };
     }
+    case PayrollFrequency.EVERY_N_DAYS: {
+      const interval = Math.max(schedule.everyNDays ?? 7, 2);
+      const anchor = getEveryNDaysAnchor(schedule, payDate);
+      const startCandidate = schedule.lastPaidDate ? addDays(anchor, 1) : subDays(payDate, interval - 1);
+      const start = startCandidate < anchor ? anchor : startCandidate;
+
+      return {
+        periodStart: start,
+        periodEnd: payDate,
+        payDate,
+        label: `${format(start, "MMM d")} - ${format(payDate, "MMM d, yyyy")}`
+      };
+    }
     default:
       return {
         periodStart: payDate,
@@ -155,4 +192,27 @@ export function getPeriodForPayDate(payDate: Date, schedule: PayrollScheduleLike
         label: format(payDate, "MMM d, yyyy")
       };
   }
+}
+
+export function getPayrollCycleDays(schedule: PayrollScheduleLike, payDate?: Date) {
+  switch (schedule.payrollFrequency) {
+    case PayrollFrequency.DAILY:
+      return 1;
+    case PayrollFrequency.WEEKLY:
+      return 7;
+    case PayrollFrequency.EVERY_N_DAYS:
+      return Math.max(schedule.everyNDays ?? 7, 2);
+    case PayrollFrequency.MONTHLY:
+    case PayrollFrequency.TWICE_MONTHLY: {
+      const referencePayDate = payDate ?? getPayDateForDate(new Date(), schedule);
+      const period = getPeriodForPayDate(referencePayDate, schedule);
+      return Math.max(differenceInCalendarDays(period.periodEnd, period.periodStart) + 1, 1);
+    }
+    default:
+      return 1;
+  }
+}
+
+export function getTimelineRetentionDays(schedule: PayrollScheduleLike, payDate?: Date) {
+  return Math.ceil(getPayrollCycleDays(schedule, payDate) / 2);
 }

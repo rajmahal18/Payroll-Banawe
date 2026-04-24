@@ -40,7 +40,7 @@ export default async function SettingsPage({
               Each employee has their own payroll frequency and pay day setup from the employee form.
             </div>
             <div className="rounded-2xl bg-slate-50 p-4">
-              Weekly, monthly, twice-monthly, and daily employees can all exist in the same company at the same time.
+              Weekly, monthly, twice-monthly, daily, and every-N-days employees can all exist in the same company at the same time.
             </div>
             <div className="rounded-2xl bg-slate-50 p-4">
               When you generate payroll for a date, only employees due on that date are included in the result.
