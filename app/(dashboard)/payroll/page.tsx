@@ -6,47 +6,46 @@ import { formatDate, formatMoney, toDateInputValue } from "@/lib/utils";
 export default async function PayrollPage({
   searchParams
 }: {
-  searchParams?: Promise<{ payDate?: string; generated?: string }>;
+  searchParams?: Promise<{ payDate?: string; generated?: string; error?: string }>;
 }) {
   const params = (await searchParams) ?? {};
   const selectedPayDate = params.payDate ? new Date(params.payDate) : new Date();
 
-  const [settings, periods] = await Promise.all([
-    prisma.payrollSettings.findFirst(),
-    prisma.payrollPeriod.findMany({
-      include: {
-        payrollEntries: {
-          include: { employee: true },
-          orderBy: { employee: { fullName: "asc" } }
-        }
-      },
-      orderBy: { payDate: "desc" },
-      take: 10
-    })
-  ]);
+  const periods = await prisma.payrollPeriod.findMany({
+    include: {
+      payrollEntries: {
+        include: { employee: true },
+        orderBy: { employee: { fullName: "asc" } }
+      }
+    },
+    orderBy: { payDate: "desc" },
+    take: 10
+  });
 
   return (
     <div>
-      <PageHeader title="Payroll" description="Generate payroll using the configured schedule, then review and finalize the period." />
+      <PageHeader title="Payroll" description="Generate payroll for a chosen pay date. Each employee is included only when their own payroll schedule is due." />
 
       {params.generated ? <div className="mb-4 rounded-2xl border border-green-200 bg-green-50 p-3 text-sm text-green-700">Payroll generated successfully.</div> : null}
+      {params.error === "no-due-employees" ? (
+        <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
+          No active employees are scheduled for payroll on that date.
+        </div>
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
         <section className="panel p-5">
           <h2 className="text-lg font-semibold text-slate-950">Generate Payroll</h2>
-          <div className="mt-2 text-sm text-slate-600">
-            Current schedule: <span className="font-medium text-slate-900">{settings?.frequency ?? "Not configured"}</span>
-          </div>
           <form action={generatePayrollForDateAction} className="mt-4 space-y-4">
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Reference date</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Pay date</label>
               <input name="targetDate" type="date" defaultValue={toDateInputValue(selectedPayDate)} required />
             </div>
             <button className="rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700">Generate Payroll</button>
           </form>
 
           <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-            The app uses the selected date and your payroll settings to determine the correct cutoff and pay date automatically.
+            The app checks every active employee against their own payroll setup, then creates payroll entries only for employees due on the selected date.
           </div>
         </section>
 
@@ -59,7 +58,10 @@ export default async function PayrollPage({
                   <div>
                     <div className="text-xs uppercase tracking-[0.2em] text-slate-500">{period.status}</div>
                     <h2 className="mt-1 text-lg font-semibold text-slate-950">{period.label}</h2>
-                    <div className="mt-1 text-sm text-slate-600">Pay date: {formatDate(period.payDate)}</div>
+                    <div className="mt-3 inline-flex min-w-[180px] flex-col rounded-[20px] bg-[#ffd95c] px-4 py-3 text-stone-900 shadow-[0_12px_24px_-20px_rgba(184,143,18,0.55)]">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8a6a10]">Pay Date</span>
+                      <span className="mt-1 text-base font-semibold text-[#0f6f67]">{formatDate(period.payDate)}</span>
+                    </div>
                     <div className="text-sm text-slate-600">Total net payout: {formatMoney(netTotal)}</div>
                   </div>
                   {period.status === "DRAFT" ? (

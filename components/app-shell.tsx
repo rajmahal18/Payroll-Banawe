@@ -1,16 +1,7 @@
 import Link from "next/link";
-import { BanknoteArrowDown, CalendarCheck2, CircleDollarSign, ClipboardList, LayoutDashboard, Settings, Users } from "lucide-react";
+import { Banknote, LogOut, Settings } from "lucide-react";
 import { logoutAction } from "@/app/actions";
-
-const items = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/employees", label: "Employees", icon: Users },
-  { href: "/attendance", label: "Attendance", icon: CalendarCheck2 },
-  { href: "/advances", label: "Advances", icon: CircleDollarSign },
-  { href: "/payables", label: "Payables", icon: BanknoteArrowDown },
-  { href: "/payroll", label: "Payroll", icon: ClipboardList },
-  { href: "/settings", label: "Settings", icon: Settings }
-];
+import { AppNav } from "@/components/layout/app-nav";
 
 export function AppShell({
   children,
@@ -21,48 +12,60 @@ export function AppShell({
   pathname: string;
   userName?: string | null;
 }) {
+  const heading = pathname
+    .split("/")
+    .filter(Boolean)[0]
+    ?.replace(/-/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase()) ?? "Dashboard";
+
   return (
-    <div className="min-h-screen bg-surface text-ink">
-      <div className="mx-auto grid min-h-screen max-w-7xl gap-4 px-4 py-4 lg:grid-cols-[250px_minmax(0,1fr)] lg:px-6">
-        <aside className="panel flex flex-col p-3">
-          <div className="rounded-2xl bg-blue-600 p-4 text-white">
-            <div className="text-xs uppercase tracking-[0.2em] text-blue-100">Absensya Payroll</div>
-            <div className="mt-2 text-xl font-semibold">Owner Control Center</div>
-            <div className="mt-1 text-sm text-blue-100">Attendance, advances, payables, and payroll in one place.</div>
+    <div className="min-h-screen bg-[linear-gradient(180deg,#fcfbf8_0%,#f7f3ed_48%,#f3f5f2_100%)] text-stone-900">
+      <header className="sticky top-0 z-40 border-b border-[rgba(218,210,200,0.68)] bg-[rgba(252,249,244,0.88)] backdrop-blur-xl">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-2 sm:px-6 lg:px-8">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[linear-gradient(135deg,#f6d8bf_0%,#dceee7_55%,#dfeaf6_100%)] text-[#6d857f] shadow-[0_16px_28px_-20px_rgba(135,116,95,0.28)] sm:h-11 sm:w-11">
+              <Banknote className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="bg-[linear-gradient(135deg,#9d7f62_0%,#7fa89f_58%,#8ca8c6_100%)] bg-clip-text text-[9px] font-semibold uppercase tracking-[0.22em] text-transparent sm:text-[10px]">
+                Absensya Payroll
+              </p>
+              <h1 className="truncate text-[15px] font-semibold tracking-tight text-stone-900 sm:text-base">{heading}</h1>
+            </div>
           </div>
 
-          <nav className="mt-4 flex-1 space-y-1">
-            {items.map((item) => {
-              const Icon = item.icon;
-              const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium ${
-                    active ? "bg-blue-50 text-blue-700" : "text-slate-700 hover:bg-slate-50"
-                  }`}
-                >
-                  <Icon className="h-4 w-4" />
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
-
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-            <div className="font-medium text-slate-900">Signed in as</div>
-            <div>{userName ?? "Owner"}</div>
-            <form action={logoutAction} className="mt-3">
-              <button className="w-full rounded-2xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800">
-                Sign out
+          <div className="hidden min-w-0 items-center gap-3 md:flex">
+            <span className="hidden max-w-[160px] truncate text-[13px] text-stone-500 lg:inline">{userName ?? "Owner"}</span>
+            <AppNav />
+            <form action={logoutAction}>
+              <button className="inline-flex h-9 items-center gap-2 rounded-xl border border-[rgba(218,210,200,0.82)] bg-[rgba(255,252,247,0.95)] px-3 text-[13px] font-semibold text-stone-700 shadow-sm transition hover:bg-[rgba(255,255,253,0.98)] hover:text-stone-950">
+                <LogOut className="h-4 w-4" />
+                Logout
               </button>
             </form>
           </div>
-        </aside>
 
-        <main className="min-w-0">{children}</main>
-      </div>
+          <div className="flex items-center gap-2 md:hidden">
+            <Link
+              href="/settings"
+              className="inline-flex h-9 items-center justify-center rounded-xl border border-[rgba(218,210,200,0.82)] bg-[rgba(255,252,247,0.95)] px-2.5 text-stone-600 shadow-sm transition hover:bg-[rgba(255,255,253,0.98)] hover:text-stone-950"
+              aria-label="Settings"
+            >
+              <Settings className="h-4 w-4" />
+            </Link>
+            <form action={logoutAction} className="contents">
+              <button className="inline-flex h-9 items-center justify-center rounded-xl border border-[rgba(218,210,200,0.82)] bg-[rgba(255,252,247,0.95)] px-2.5 text-stone-600 shadow-sm transition hover:bg-[rgba(255,255,253,0.98)] hover:text-stone-950" aria-label="Logout">
+                <LogOut className="h-4 w-4" />
+              </button>
+            </form>
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-6xl px-4 py-3 pb-32 sm:px-6 lg:px-8 lg:py-4 lg:pb-10">
+        {children}
+      </main>
+      <AppNav mobile />
     </div>
   );
 }

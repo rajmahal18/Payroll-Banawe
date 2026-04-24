@@ -1,4 +1,4 @@
-import { PayrollFrequency, type PayrollSettings } from "@prisma/client";
+import { PayrollFrequency } from "@prisma/client";
 import {
   addDays,
   endOfMonth,
@@ -19,6 +19,14 @@ export type GeneratedPeriod = {
   label: string;
 };
 
+export type PayrollScheduleLike = {
+  payrollFrequency: PayrollFrequency;
+  weeklyPayDay: number | null;
+  monthlyPayDay: number | null;
+  twiceMonthlyDayOne: number | null;
+  twiceMonthlyDayTwo: number | null;
+};
+
 function clampDay(day: number, referenceDate: Date) {
   return Math.min(day, getDate(lastDayOfMonth(referenceDate)));
 }
@@ -27,12 +35,27 @@ function safeDateInMonth(referenceDate: Date, day: number) {
   return setDate(startOfMonth(referenceDate), clampDay(day, referenceDate));
 }
 
-export function getPayDateForDate(date: Date, settings: PayrollSettings): Date {
-  switch (settings.frequency) {
+export function describePayrollFrequency(schedule: PayrollScheduleLike) {
+  switch (schedule.payrollFrequency) {
+    case PayrollFrequency.DAILY:
+      return "Daily";
+    case PayrollFrequency.WEEKLY:
+      return "Weekly";
+    case PayrollFrequency.TWICE_MONTHLY:
+      return "Twice Monthly";
+    case PayrollFrequency.MONTHLY:
+      return "Monthly";
+    default:
+      return "Payroll";
+  }
+}
+
+export function getPayDateForDate(date: Date, schedule: PayrollScheduleLike): Date {
+  switch (schedule.payrollFrequency) {
     case PayrollFrequency.DAILY:
       return date;
     case PayrollFrequency.WEEKLY: {
-      const targetDay = settings.weeklyPayDay ?? 5;
+      const targetDay = schedule.weeklyPayDay ?? 5;
       let cursor = new Date(date);
       while (getDay(cursor) !== targetDay) {
         cursor = addDays(cursor, 1);
@@ -40,13 +63,13 @@ export function getPayDateForDate(date: Date, settings: PayrollSettings): Date {
       return cursor;
     }
     case PayrollFrequency.MONTHLY: {
-      const targetDay = settings.monthlyPayDay ?? 15;
+      const targetDay = schedule.monthlyPayDay ?? 15;
       const currentMonthPayDate = safeDateInMonth(date, targetDay);
       return date <= currentMonthPayDate ? currentMonthPayDate : safeDateInMonth(addDays(endOfMonth(date), 1), targetDay);
     }
     case PayrollFrequency.TWICE_MONTHLY: {
-      const first = Math.min(settings.twiceMonthlyDayOne ?? 15, settings.twiceMonthlyDayTwo ?? 30);
-      const second = Math.max(settings.twiceMonthlyDayOne ?? 15, settings.twiceMonthlyDayTwo ?? 30);
+      const first = Math.min(schedule.twiceMonthlyDayOne ?? 15, schedule.twiceMonthlyDayTwo ?? 30);
+      const second = Math.max(schedule.twiceMonthlyDayOne ?? 15, schedule.twiceMonthlyDayTwo ?? 30);
       const firstDate = safeDateInMonth(date, first);
       const secondDate = safeDateInMonth(date, second);
       if (date <= firstDate) return firstDate;
@@ -58,8 +81,8 @@ export function getPayDateForDate(date: Date, settings: PayrollSettings): Date {
   }
 }
 
-export function getPeriodForPayDate(payDate: Date, settings: PayrollSettings): GeneratedPeriod {
-  switch (settings.frequency) {
+export function getPeriodForPayDate(payDate: Date, schedule: PayrollScheduleLike): GeneratedPeriod {
+  switch (schedule.payrollFrequency) {
     case PayrollFrequency.DAILY:
       return {
         periodStart: payDate,
@@ -77,7 +100,7 @@ export function getPeriodForPayDate(payDate: Date, settings: PayrollSettings): G
       };
     }
     case PayrollFrequency.MONTHLY: {
-      const targetDay = settings.monthlyPayDay ?? 15;
+      const targetDay = schedule.monthlyPayDay ?? 15;
       const previousMonth = subDays(startOfMonth(payDate), 1);
       const previousPayDate = safeDateInMonth(previousMonth, targetDay);
       const start = addDays(previousPayDate, 1);
@@ -89,8 +112,8 @@ export function getPeriodForPayDate(payDate: Date, settings: PayrollSettings): G
       };
     }
     case PayrollFrequency.TWICE_MONTHLY: {
-      const first = Math.min(settings.twiceMonthlyDayOne ?? 15, settings.twiceMonthlyDayTwo ?? 30);
-      const second = Math.max(settings.twiceMonthlyDayOne ?? 15, settings.twiceMonthlyDayTwo ?? 30);
+      const first = Math.min(schedule.twiceMonthlyDayOne ?? 15, schedule.twiceMonthlyDayTwo ?? 30);
+      const second = Math.max(schedule.twiceMonthlyDayOne ?? 15, schedule.twiceMonthlyDayTwo ?? 30);
       const firstDate = safeDateInMonth(payDate, first);
       const secondDate = safeDateInMonth(payDate, second);
 
@@ -124,5 +147,12 @@ export function getPeriodForPayDate(payDate: Date, settings: PayrollSettings): G
         label: `${format(start, "MMM d")} - ${format(payDate, "MMM d, yyyy")}`
       };
     }
+    default:
+      return {
+        periodStart: payDate,
+        periodEnd: payDate,
+        payDate,
+        label: format(payDate, "MMM d, yyyy")
+      };
   }
 }

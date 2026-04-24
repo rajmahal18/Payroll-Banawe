@@ -58,6 +58,11 @@ model Employee {
   fullName          String
   position          String?
   dailyRate         Decimal            @db.Decimal(10, 2)
+  payrollFrequency  PayrollFrequency   @default(WEEKLY)
+  weeklyPayDay      Int?
+  monthlyPayDay     Int?
+  twiceMonthlyDayOne Int?
+  twiceMonthlyDayTwo Int?
   status            EmployeeStatus     @default(ACTIVE)
   startDate         DateTime?
   contactNumber     String?
