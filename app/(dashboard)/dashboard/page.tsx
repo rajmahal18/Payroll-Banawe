@@ -475,6 +475,11 @@ export default async function DashboardPage({
         }
 
         period.payrollEntries.forEach((entry) => {
+          const alreadyIncluded = existing.details.some((detail) => detail.employeeId === entry.employee.id);
+          if (alreadyIncluded) {
+            return;
+          }
+
           const liveMetrics = getLivePayrollAttendanceMetrics({
             employee: entry.employee,
             periodStart: period.periodStart,
@@ -483,7 +488,9 @@ export default async function DashboardPage({
           });
 
           existing.expectedTotal += Number(entry.netPay);
-          existing.employeeNames.push(entry.employee.fullName);
+          if (!existing.employeeNames.includes(entry.employee.fullName)) {
+            existing.employeeNames.push(entry.employee.fullName);
+          }
           existing.details.push({
             employeeId: entry.employee.id,
             employeeName: entry.employee.fullName,
