@@ -5,7 +5,7 @@ import { EmployeeSearchForm } from "@/components/employee-search-form";
 import { PaginationControls } from "@/components/pagination-controls";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { formatDate, parseDateInputValue, toDateInputValue } from "@/lib/utils";
+import { endOfDayLocal, formatDate, parseDateInputValue, startOfDayLocal, toDateInputValue } from "@/lib/utils";
 import { getShopWorkCalendar, isWorkDate } from "@/lib/work-schedule";
 import { CalendarDays, UsersRound } from "lucide-react";
 
@@ -107,11 +107,20 @@ export default async function EmployeesPage({
   const attendanceTotal = attendanceDateValues.length;
   const pagedAttendanceDateValues = attendanceDateValues.slice((attendancePage - 1) * PAGE_SIZE, attendancePage * PAGE_SIZE);
   const pagedAttendanceDates = pagedAttendanceDateValues.map((value) => parseDateInputValue(value));
+  const attendanceRangeStart = pagedAttendanceDates.length
+    ? pagedAttendanceDates.reduce((min, date) => (date < min ? date : min))
+    : null;
+  const attendanceRangeEnd = pagedAttendanceDates.length
+    ? pagedAttendanceDates.reduce((max, date) => (date > max ? date : max))
+    : null;
   const attendanceRecords = pagedAttendanceDates.length
     ? await prisma.attendanceRecord.findMany({
         where: {
           employee: { shopId: user.shop.id },
-          date: { in: pagedAttendanceDates }
+          date: {
+            gte: startOfDayLocal(attendanceRangeStart!),
+            lte: endOfDayLocal(attendanceRangeEnd!)
+          }
         },
         include: {
           employee: {
