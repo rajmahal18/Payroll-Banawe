@@ -1,14 +1,13 @@
 import { PayrollFrequency } from "@prisma/client";
 import {
   BUSINESS_TIME_ZONE,
-  addBusinessDays,
-  differenceInBusinessDays,
   formatDate,
   isSameBusinessDate,
   parseDateInputValue,
   startOfDayLocal,
   toDateInputValue
 } from "@/lib/utils";
+import { addWorkDays, differenceInWorkDays, nextWorkDate, type WorkCalendar } from "@/lib/work-schedule";
 
 const shortDateFormatter = new Intl.DateTimeFormat("en-PH", {
   timeZone: BUSINESS_TIME_ZONE,
@@ -64,11 +63,6 @@ function normalizeMonth(year: number, month: number) {
   return { year: normalizedYear, month: normalizedMonth };
 }
 
-function clampDay(day: number, referenceDate: Date) {
-  const { year, month } = getDateParts(referenceDate);
-  return Math.min(day, getDaysInMonth(year, month));
-}
-
 function safeDateInMonth(referenceDate: Date, day: number) {
   const { year, month } = getDateParts(referenceDate);
   return createDateFromParts(year, month, Math.min(day, getDaysInMonth(year, month)));
@@ -79,6 +73,10 @@ function startOfMonthBusiness(date: Date) {
   return createDateFromParts(year, month, 1);
 }
 
+function shiftCalendarDays(date: Date, amount: number) {
+  return parseDateInputValue(toDateInputValue(new Date(date.getTime() + amount * 24 * 60 * 60 * 1000)));
+}
+
 function shiftMonthStart(date: Date, offset: number) {
   const { year, month } = getDateParts(date);
   const normalized = normalizeMonth(year, month + offset);
@@ -87,6 +85,15 @@ function shiftMonthStart(date: Date, offset: number) {
 
 function getEveryNDaysAnchor(schedule: PayrollScheduleLike, fallbackDate: Date) {
   return startOfDayLocal(schedule.lastPaidDate ?? schedule.startDate ?? fallbackDate);
+}
+
+function compareDateValues(left: Date, right: Date) {
+  return toDateInputValue(left).localeCompare(toDateInputValue(right));
+}
+
+function isAfterAnchor(candidate: Date, anchor: Date, strict: boolean) {
+  const comparison = compareDateValues(candidate, anchor);
+  return strict ? comparison > 0 : comparison >= 0;
 }
 
 function formatShortDate(date: Date) {
@@ -110,53 +117,66 @@ export function describePayrollFrequency(schedule: PayrollScheduleLike) {
   }
 }
 
-export function getPayDateForDate(date: Date, schedule: PayrollScheduleLike): Date {
+export function getPayDateForDate(date: Date, schedule: PayrollScheduleLike, calendar?: WorkCalendar): Date {
+  const anchor = startOfDayLocal(schedule.lastPaidDate ?? schedule.startDate ?? date);
+  const hasAnchor = Boolean(schedule.lastPaidDate || schedule.startDate);
+  const strictAfterAnchor = Boolean(schedule.lastPaidDate);
+  const referenceDate = hasAnchor ? anchor : parseDateInputValue(toDateInputValue(date));
+
   switch (schedule.payrollFrequency) {
     case PayrollFrequency.DAILY:
-      return parseDateInputValue(toDateInputValue(date));
+      return strictAfterAnchor ? addWorkDays(anchor, 1, calendar) : nextWorkDate(referenceDate, calendar);
     case PayrollFrequency.WEEKLY: {
       const targetDay = schedule.weeklyPayDay ?? 5;
-      let cursor = parseDateInputValue(toDateInputValue(date));
-      while (cursor.getUTCDay() !== targetDay) {
-        cursor = addBusinessDays(cursor, 1);
+      let cursor = referenceDate;
+      while (true) {
+        while (cursor.getUTCDay() !== targetDay) {
+          cursor = shiftCalendarDays(cursor, 1);
+        }
+        const payDate = nextWorkDate(cursor, calendar);
+        if (isAfterAnchor(payDate, anchor, strictAfterAnchor)) {
+          return payDate;
+        }
+        cursor = shiftCalendarDays(cursor, 1);
       }
-      return cursor;
     }
     case PayrollFrequency.MONTHLY: {
       const targetDay = schedule.monthlyPayDay ?? 15;
-      const currentMonthPayDate = safeDateInMonth(date, targetDay);
-      return toDateInputValue(date) <= toDateInputValue(currentMonthPayDate)
-        ? currentMonthPayDate
-        : safeDateInMonth(shiftMonthStart(date, 1), targetDay);
+      let monthCursor = startOfMonthBusiness(referenceDate);
+      while (true) {
+        const payDate = nextWorkDate(safeDateInMonth(monthCursor, targetDay), calendar);
+        if (isAfterAnchor(payDate, anchor, strictAfterAnchor)) {
+          return payDate;
+        }
+        monthCursor = shiftMonthStart(monthCursor, 1);
+      }
     }
     case PayrollFrequency.TWICE_MONTHLY: {
       const first = Math.min(schedule.twiceMonthlyDayOne ?? 15, schedule.twiceMonthlyDayTwo ?? 30);
       const second = Math.max(schedule.twiceMonthlyDayOne ?? 15, schedule.twiceMonthlyDayTwo ?? 30);
-      const firstDate = safeDateInMonth(date, first);
-      const secondDate = safeDateInMonth(date, second);
-      if (toDateInputValue(date) <= toDateInputValue(firstDate)) return firstDate;
-      if (toDateInputValue(date) <= toDateInputValue(secondDate)) return secondDate;
-      return safeDateInMonth(shiftMonthStart(date, 1), first);
+      let monthCursor = startOfMonthBusiness(referenceDate);
+      while (true) {
+        const firstDate = nextWorkDate(safeDateInMonth(monthCursor, first), calendar);
+        if (isAfterAnchor(firstDate, anchor, strictAfterAnchor)) return firstDate;
+        const secondDate = nextWorkDate(safeDateInMonth(monthCursor, second), calendar);
+        if (isAfterAnchor(secondDate, anchor, strictAfterAnchor)) return secondDate;
+        monthCursor = shiftMonthStart(monthCursor, 1);
+      }
     }
     case PayrollFrequency.EVERY_N_DAYS: {
       const interval = Math.max(schedule.everyNDays ?? 7, 2);
       const anchor = getEveryNDaysAnchor(schedule, date);
       const hasPreviousPayout = Boolean(schedule.lastPaidDate);
-      const firstPayDate = hasPreviousPayout ? addBusinessDays(anchor, interval) : addBusinessDays(anchor, interval - 1);
-      if (toDateInputValue(date) <= toDateInputValue(firstPayDate)) {
-        return firstPayDate;
-      }
-
-      const daysSinceFirstPayDate = differenceInBusinessDays(date, firstPayDate);
-      const cyclesToAdvance = Math.ceil(daysSinceFirstPayDate / interval);
-      return addBusinessDays(firstPayDate, cyclesToAdvance * interval);
+      return hasPreviousPayout ? addWorkDays(anchor, interval, calendar) : addWorkDays(anchor, interval - 1, calendar);
     }
     default:
-      return parseDateInputValue(toDateInputValue(date));
+      return nextWorkDate(parseDateInputValue(toDateInputValue(date)), calendar);
   }
 }
 
-export function getPeriodForPayDate(payDate: Date, schedule: PayrollScheduleLike): GeneratedPeriod {
+export function getPeriodForPayDate(payDate: Date, schedule: PayrollScheduleLike, calendar?: WorkCalendar): GeneratedPeriod {
+  const anchoredStart = schedule.lastPaidDate ? addWorkDays(startOfDayLocal(schedule.lastPaidDate), 1, calendar) : null;
+
   switch (schedule.payrollFrequency) {
     case PayrollFrequency.DAILY:
       return {
@@ -166,7 +186,15 @@ export function getPeriodForPayDate(payDate: Date, schedule: PayrollScheduleLike
         label: formatDate(payDate)
       };
     case PayrollFrequency.WEEKLY: {
-      const start = addBusinessDays(payDate, -6);
+      const targetDay = schedule.weeklyPayDay ?? 5;
+      let scheduledPayDate = parseDateInputValue(toDateInputValue(payDate));
+
+      while (scheduledPayDate.getUTCDay() !== targetDay || toDateInputValue(nextWorkDate(scheduledPayDate, calendar)) !== toDateInputValue(payDate)) {
+        scheduledPayDate = shiftCalendarDays(scheduledPayDate, -1);
+      }
+
+      const previousPayDate = nextWorkDate(shiftCalendarDays(scheduledPayDate, -7), calendar);
+      const start = anchoredStart && compareDateValues(anchoredStart, payDate) <= 0 ? anchoredStart : addWorkDays(previousPayDate, 1, calendar);
       return {
         periodStart: start,
         periodEnd: payDate,
@@ -177,8 +205,8 @@ export function getPeriodForPayDate(payDate: Date, schedule: PayrollScheduleLike
     case PayrollFrequency.MONTHLY: {
       const targetDay = schedule.monthlyPayDay ?? 15;
       const previousMonth = shiftMonthStart(payDate, -1);
-      const previousPayDate = safeDateInMonth(previousMonth, targetDay);
-      const start = addBusinessDays(previousPayDate, 1);
+      const previousPayDate = nextWorkDate(safeDateInMonth(previousMonth, targetDay), calendar);
+      const start = anchoredStart && compareDateValues(anchoredStart, payDate) <= 0 ? anchoredStart : addWorkDays(previousPayDate, 1, calendar);
       return {
         periodStart: start,
         periodEnd: payDate,
@@ -189,11 +217,11 @@ export function getPeriodForPayDate(payDate: Date, schedule: PayrollScheduleLike
     case PayrollFrequency.TWICE_MONTHLY: {
       const first = Math.min(schedule.twiceMonthlyDayOne ?? 15, schedule.twiceMonthlyDayTwo ?? 30);
       const second = Math.max(schedule.twiceMonthlyDayOne ?? 15, schedule.twiceMonthlyDayTwo ?? 30);
-      const firstDate = safeDateInMonth(payDate, first);
-      const secondDate = safeDateInMonth(payDate, second);
+      const firstDate = nextWorkDate(safeDateInMonth(payDate, first), calendar);
+      const secondDate = nextWorkDate(safeDateInMonth(payDate, second), calendar);
 
       if (isSameBusinessDate(payDate, firstDate)) {
-        const start = startOfMonthBusiness(payDate);
+        const start = anchoredStart && compareDateValues(anchoredStart, payDate) <= 0 ? anchoredStart : startOfMonthBusiness(payDate);
         return {
           periodStart: start,
           periodEnd: firstDate,
@@ -203,7 +231,7 @@ export function getPeriodForPayDate(payDate: Date, schedule: PayrollScheduleLike
       }
 
       if (isSameBusinessDate(payDate, secondDate)) {
-        const start = addBusinessDays(firstDate, 1);
+        const start = anchoredStart && compareDateValues(anchoredStart, payDate) <= 0 ? anchoredStart : addWorkDays(firstDate, 1, calendar);
         return {
           periodStart: start,
           periodEnd: secondDate,
@@ -213,8 +241,8 @@ export function getPeriodForPayDate(payDate: Date, schedule: PayrollScheduleLike
       }
 
       const prevMonth = shiftMonthStart(payDate, -1);
-      const prevSecond = safeDateInMonth(prevMonth, second);
-      const start = addBusinessDays(prevSecond, 1);
+      const prevSecond = nextWorkDate(safeDateInMonth(prevMonth, second), calendar);
+      const start = anchoredStart && compareDateValues(anchoredStart, payDate) <= 0 ? anchoredStart : addWorkDays(prevSecond, 1, calendar);
       return {
         periodStart: start,
         periodEnd: payDate,
@@ -225,7 +253,7 @@ export function getPeriodForPayDate(payDate: Date, schedule: PayrollScheduleLike
     case PayrollFrequency.EVERY_N_DAYS: {
       const interval = Math.max(schedule.everyNDays ?? 7, 2);
       const anchor = getEveryNDaysAnchor(schedule, payDate);
-      const startCandidate = schedule.lastPaidDate ? addBusinessDays(anchor, 1) : addBusinessDays(payDate, -(interval - 1));
+      const startCandidate = anchoredStart ?? addWorkDays(payDate, -(interval - 1), calendar);
       const start = toDateInputValue(startCandidate) < toDateInputValue(anchor) ? anchor : startCandidate;
 
       return {
@@ -245,25 +273,28 @@ export function getPeriodForPayDate(payDate: Date, schedule: PayrollScheduleLike
   }
 }
 
-export function getPayrollCycleDays(schedule: PayrollScheduleLike, payDate?: Date) {
+export function getPayrollCycleDays(schedule: PayrollScheduleLike, payDate?: Date, calendar?: WorkCalendar) {
   switch (schedule.payrollFrequency) {
     case PayrollFrequency.DAILY:
       return 1;
-    case PayrollFrequency.WEEKLY:
-      return 7;
+    case PayrollFrequency.WEEKLY: {
+      const referencePayDate = payDate ?? getPayDateForDate(new Date(), schedule, calendar);
+      const period = getPeriodForPayDate(referencePayDate, schedule, calendar);
+      return Math.max(differenceInWorkDays(period.periodEnd, period.periodStart, calendar) + 1, 1);
+    }
     case PayrollFrequency.EVERY_N_DAYS:
       return Math.max(schedule.everyNDays ?? 7, 2);
     case PayrollFrequency.MONTHLY:
     case PayrollFrequency.TWICE_MONTHLY: {
-      const referencePayDate = payDate ?? getPayDateForDate(new Date(), schedule);
-      const period = getPeriodForPayDate(referencePayDate, schedule);
-      return Math.max(differenceInBusinessDays(period.periodEnd, period.periodStart) + 1, 1);
+      const referencePayDate = payDate ?? getPayDateForDate(new Date(), schedule, calendar);
+      const period = getPeriodForPayDate(referencePayDate, schedule, calendar);
+      return Math.max(differenceInWorkDays(period.periodEnd, period.periodStart, calendar) + 1, 1);
     }
     default:
       return 1;
   }
 }
 
-export function getTimelineRetentionDays(schedule: PayrollScheduleLike, payDate?: Date) {
-  return Math.ceil(getPayrollCycleDays(schedule, payDate) / 2);
+export function getTimelineRetentionDays(schedule: PayrollScheduleLike, payDate?: Date, calendar?: WorkCalendar) {
+  return Math.ceil(getPayrollCycleDays(schedule, payDate, calendar) / 2);
 }

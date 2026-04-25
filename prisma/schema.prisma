@@ -65,6 +65,7 @@ model Shop {
   employees       Employee[]
   payrollSettings PayrollSettings[]
   payrollPeriods  PayrollPeriod[]
+  noWorkDays      ShopNoWorkDay[]
 }
 
 model Employee {
@@ -170,11 +171,25 @@ model PayrollSettings {
   twiceMonthlyDayTwo Int?
   everyNDays         Int?
   autoGenerate       Boolean          @default(true)
+  workDays           String           @default("1,2,3,4,5,6")
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
   shop               Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
   @@unique([shopId])
+}
+
+model ShopNoWorkDay {
+  id        String   @id @default(cuid())
+  shopId    String
+  date      DateTime
+  reason    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, date])
+  @@index([date])
 }
 
 model PayrollPeriod {

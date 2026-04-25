@@ -5,7 +5,8 @@ import { EmployeeSearchForm } from "@/components/employee-search-form";
 import { PaginationControls } from "@/components/pagination-controls";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { formatDate, toDateInputValue } from "@/lib/utils";
+import { formatDate, parseDateInputValue, toDateInputValue } from "@/lib/utils";
+import { getShopWorkCalendar, isWorkDate } from "@/lib/work-schedule";
 import { CalendarDays, UsersRound } from "lucide-react";
 
 const PAGE_SIZE = 10;
@@ -37,6 +38,7 @@ export default async function EmployeesPage({
   const peoplePage = getPage(params.page);
   const attendancePage = getPage(params.attendancePage);
   const user = await requireUser();
+  const workCalendar = await getShopWorkCalendar(user.shop.id);
   const employeeWhere = {
     shopId: user.shop.id,
     ...(search
@@ -93,8 +95,18 @@ export default async function EmployeesPage({
       }
     })
   ]);
-  const attendanceTotal = savedAttendanceDateGroups.length;
-  const pagedAttendanceDates = savedAttendanceDateGroups.slice((attendancePage - 1) * PAGE_SIZE, attendancePage * PAGE_SIZE).map((group) => group.date);
+  const savedAttendanceDateValues = savedAttendanceDateGroups.map((group) => toDateInputValue(group.date));
+  const todayValue = toDateInputValue(new Date());
+  const recentNoWorkDateValues = Array.from({ length: 90 }, (_, index) => {
+    const date = parseDateInputValue(todayValue);
+    date.setDate(date.getDate() - index);
+    const value = toDateInputValue(date);
+    return isWorkDate(date, workCalendar) ? null : value;
+  }).filter((value): value is string => Boolean(value));
+  const attendanceDateValues = Array.from(new Set([...savedAttendanceDateValues, ...recentNoWorkDateValues])).sort((a, b) => b.localeCompare(a));
+  const attendanceTotal = attendanceDateValues.length;
+  const pagedAttendanceDateValues = attendanceDateValues.slice((attendancePage - 1) * PAGE_SIZE, attendancePage * PAGE_SIZE);
+  const pagedAttendanceDates = pagedAttendanceDateValues.map((value) => parseDateInputValue(value));
   const attendanceRecords = pagedAttendanceDates.length
     ? await prisma.attendanceRecord.findMany({
         where: {
@@ -114,9 +126,9 @@ export default async function EmployeesPage({
       })
     : [];
   const recordsByDate = new Map(
-    pagedAttendanceDates.map((date) => [
-      toDateInputValue(date),
-      attendanceRecords.filter((record) => toDateInputValue(record.date) === toDateInputValue(date))
+    pagedAttendanceDateValues.map((dateValue) => [
+      dateValue,
+      attendanceRecords.filter((record) => toDateInputValue(record.date) === dateValue)
     ])
   );
 
@@ -160,13 +172,14 @@ export default async function EmployeesPage({
         <section className="panel overflow-hidden">
           <div className="border-b border-[rgba(148,190,139,0.35)] px-4 py-3 sm:px-5">
             <h2 className="text-lg font-semibold text-stone-950">Attendance Summary</h2>
-            <p className="mt-1 text-sm text-[#7a7168]">One row per saved attendance day.</p>
+            <p className="mt-1 text-sm text-[#7a7168]">Saved attendance and no-work days in one compact list.</p>
           </div>
 
           <div className="divide-y divide-[rgba(148,190,139,0.28)]">
             {pagedAttendanceDates.length ? (
               pagedAttendanceDates.map((date) => {
                 const key = toDateInputValue(date);
+                const noWork = !isWorkDate(date, workCalendar);
                 const records = recordsByDate.get(key) ?? [];
                 const absent = records.filter((record) => record.status === "ABSENT").map((record) => record.employee.fullName);
                 const halfDay = records.filter((record) => String(record.status) === "HALF_DAY").map((record) => record.employee.fullName);
@@ -176,7 +189,9 @@ export default async function EmployeesPage({
                   <div key={key} className="grid gap-1 px-4 py-3 text-sm sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-3 sm:px-5">
                     <div className="font-semibold text-stone-950">{formatDate(date)}</div>
                     <div className="min-w-0 space-y-1">
-                      {isPerfect ? (
+                      {noWork ? (
+                        <div className="font-semibold text-[#8a5f20]">No work day</div>
+                      ) : isPerfect ? (
                         <div className="font-semibold text-emerald-700">Perfect attendance</div>
                       ) : null}
                       {absent.length ? (

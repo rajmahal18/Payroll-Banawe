@@ -13,6 +13,13 @@ export type TimelineEmployeeDetail = {
   position: string | null;
   frequencyLabel: string;
   periodLabel: string;
+  calendarMode: "weekday" | "date";
+  attendanceCalendarDays: Array<{
+    dateValue: string;
+    dayLabel: string;
+    dateLabel: string;
+    status: "PRESENT" | "HALF_DAY" | "ABSENT" | "NO_WORK";
+  }>;
   absentDates: string[];
   halfDayDates: string[];
   daysAbsent: number;
@@ -30,6 +37,20 @@ export type TimelineEmployeeDetail = {
 function formatDateList(values: string[]) {
   return values.map((value) => formatDate(value)).join(", ");
 }
+
+const attendanceDayStyle = {
+  PRESENT: "border-emerald-200 bg-emerald-100 text-emerald-800",
+  HALF_DAY: "border-amber-200 bg-amber-100 text-amber-800",
+  ABSENT: "border-rose-200 bg-rose-100 text-rose-800",
+  NO_WORK: "border-stone-200 bg-stone-100 text-stone-500"
+} as const;
+
+const attendanceDayTitle = {
+  PRESENT: "Present",
+  HALF_DAY: "Half-day",
+  ABSENT: "Absent",
+  NO_WORK: "No work day"
+} as const;
 
 export type TimelineEntry = {
   id: string;
@@ -143,6 +164,25 @@ function PayrollTimelineModal({
               <div className="mt-4 grid gap-3 lg:grid-cols-[0.9fr_1.1fr]">
                 <div className="rounded-[20px] bg-[rgba(229,245,224,0.86)] px-4 py-4 text-sm text-stone-700">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">Attendance Summary</div>
+                  <div className="mt-3">
+                    <div className="grid grid-cols-7 gap-1.5">
+                      {detail.attendanceCalendarDays.map((day) => (
+                        <div
+                          key={day.dateValue}
+                          title={`${formatDate(day.dateValue)} - ${attendanceDayTitle[day.status]}`}
+                          className={`grid h-9 min-w-0 place-items-center rounded-xl border text-[11px] font-semibold ${attendanceDayStyle[day.status]}`}
+                        >
+                          {detail.calendarMode === "weekday" ? day.dayLabel : day.dateLabel}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]">
+                      <span className="rounded-full bg-emerald-100 px-2 py-1 text-emerald-800">Present</span>
+                      <span className="rounded-full bg-rose-100 px-2 py-1 text-rose-800">Absent</span>
+                      <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-800">Half-day</span>
+                      <span className="rounded-full bg-stone-100 px-2 py-1 text-stone-500">No work</span>
+                    </div>
+                  </div>
                   <div className="mt-2 font-medium text-stone-950">
                     {detail.paidDayUnits} paid day equivalent from {detail.estimatedDays} full day{detail.estimatedDays !== 1 ? "s" : ""}, {detail.daysHalf} half day{detail.daysHalf !== 1 ? "s" : ""}, and {detail.daysAbsent} absent day{detail.daysAbsent !== 1 ? "s" : ""}.
                   </div>

@@ -11,6 +11,7 @@ import {
 import { describePayrollFrequency, getPayDateForDate, getPeriodForPayDate, getTimelineRetentionDays } from "@/lib/payroll";
 import { getPayrollTimelineEntries } from "@/lib/payroll-timeline";
 import { prisma } from "@/lib/prisma";
+import { getShopWorkCalendar, isWorkDate } from "@/lib/work-schedule";
 import {
   addBusinessDays,
   differenceInBusinessDays,
@@ -27,7 +28,7 @@ import {
 export default async function DashboardPage({
   searchParams
 }: {
-  searchParams?: Promise<{ date?: string; saved?: string; edit?: string; paid?: string; error?: string }>;
+  searchParams?: Promise<{ date?: string; saved?: string; edit?: string; paid?: string; error?: string; noWork?: string }>;
 }) {
   const params = (await searchParams) ?? {};
   const selectedDate = params.date ? parseDateInputValue(params.date) : new Date();
@@ -37,6 +38,8 @@ export default async function DashboardPage({
   const stripEnd = endOfDayLocal(addBusinessDays(selectedDate, 3));
   const todayStart = startOfDayLocal(today);
   const user = await requireUser();
+  const workCalendar = await getShopWorkCalendar(user.shop.id);
+  const selectedIsWorkDay = isWorkDate(selectedDate, workCalendar);
   const employees = await prisma.employee.findMany({ where: { shopId: user.shop.id, status: "ACTIVE" }, orderBy: { fullName: "asc" } });
   const employeeIds = employees.map((employee) => employee.id);
   const hasEmployees = employeeIds.length > 0;
@@ -124,7 +127,7 @@ export default async function DashboardPage({
       : Promise.resolve([])
   ]);
 
-  const presentToday = Math.max(employeeCount - absentToday, 0);
+  const presentToday = selectedIsWorkDay ? Math.max(employeeCount - absentToday, 0) : 0;
   const byEmployee = new Map(records.map((record) => [record.employeeId, record]));
   const hasSavedAttendance = records.length > 0;
   const isEditingAttendance = params.edit === "1";
@@ -561,6 +564,7 @@ export default async function DashboardPage({
   const dateSnapshots = Array.from({ length: 7 }, (_, index) => {
     const date = addBusinessDays(selectedDate, index - 3);
     const snapshotDateValue = toDateInputValue(date);
+    const noWork = !isWorkDate(date, workCalendar);
     const dayRecords = stripRecords.filter((record) => toDateInputValue(record.date) === snapshotDateValue);
     const absentEmployees = dayRecords
       .filter((record) => record.status === "ABSENT")
@@ -569,7 +573,9 @@ export default async function DashboardPage({
       .filter((record) => String(record.status) === "HALF_DAY")
       .map((record) => record.employee.fullName.split(" ")[0]);
     const summary =
-      dayRecords.length === 0
+      noWork
+        ? "No work day"
+        : dayRecords.length === 0
         ? "Not yet saved"
         : absentEmployees.length === 0 && halfDayEmployees.length === 0
           ? "Perfect attendance"
@@ -590,13 +596,15 @@ export default async function DashboardPage({
       dateLabel: formatDayMonth(date),
       summary,
       active: snapshotDateValue === dateValue,
-      today: isSameBusinessDate(date, today)
+      today: isSameBusinessDate(date, today),
+      noWork
     };
   });
 
   return (
     <div>
       {params.saved ? <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">Attendance saved successfully.</div> : null}
+      {params.noWork ? <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">No attendance was saved because this is a no-work day.</div> : null}
       {params.paid ? <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">Payroll marked as paid.</div> : null}
       {params.error === "no-due-payroll" ? <div className="mb-4 rounded-2xl border border-lime-200 bg-lime-50 p-3 text-sm text-lime-700">No due payroll found for that day.</div> : null}
       {params.error === "attendance-mismatch" ? (
@@ -607,7 +615,12 @@ export default async function DashboardPage({
 
       <DashboardStatsStrip
         entries={[
-          { label: "Attendance Logged", value: hasSavedAttendance ? "Yes" : "No", icon: "attendance", tone: hasSavedAttendance ? "green" : "red" },
+          {
+            label: "Attendance Logged",
+            value: selectedIsWorkDay ? (hasSavedAttendance ? "Yes" : "No") : "No Work",
+            icon: "attendance",
+            tone: selectedIsWorkDay ? (hasSavedAttendance ? "green" : "red") : "amber"
+          },
           { label: "Active Employees", value: employeeCount, icon: "employees", tone: "blue" },
           { label: "Present", value: presentToday, icon: "present", tone: "green" },
           { label: "Absent", value: absentToday, icon: "absent", tone: "red" },
@@ -651,7 +664,9 @@ export default async function DashboardPage({
         <AttendanceChecklist
           title={`Attendance for ${formatDate(selectedDate)}`}
           subtitle={
-            hasSavedAttendance && !isEditingAttendance
+            !selectedIsWorkDay
+              ? "No attendance needed. This date is marked as a no-work day."
+              : hasSavedAttendance && !isEditingAttendance
               ? "Saved for this day. Edit only if something changed."
               : "Everyone starts present. Mark only Absent or Half Day, then save."
           }
@@ -659,6 +674,7 @@ export default async function DashboardPage({
           redirectTo="/dashboard"
           hasSavedAttendance={hasSavedAttendance}
           isEditing={isEditingAttendance}
+          noWorkDay={!selectedIsWorkDay}
           dateSnapshots={dateSnapshots}
           items={employees.map((employee) => {
             const record = byEmployee.get(employee.id);

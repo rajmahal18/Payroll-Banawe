@@ -18,6 +18,7 @@ type AttendanceDateSnapshot = {
   summary: string;
   active: boolean;
   today: boolean;
+  noWork: boolean;
 };
 
 function shiftDateValue(value: string, days: number) {
@@ -37,6 +38,7 @@ export function AttendanceChecklist({
   redirectTo,
   hasSavedAttendance,
   isEditing,
+  noWorkDay,
   dateSnapshots,
   items
 }: {
@@ -46,10 +48,11 @@ export function AttendanceChecklist({
   redirectTo: string;
   hasSavedAttendance: boolean;
   isEditing: boolean;
+  noWorkDay?: boolean;
   dateSnapshots: AttendanceDateSnapshot[];
   items: AttendanceChecklistItem[];
 }) {
-  const isReadOnly = hasSavedAttendance && !isEditing;
+  const isReadOnly = noWorkDay || (hasSavedAttendance && !isEditing);
   const isSelectedDateToday = dateValue === shiftDateValue(new Date().toISOString().slice(0, 10), 0);
   const dateScopeLabel = isSelectedDateToday ? "Today's" : "Selected Date";
   const submitLabel = isReadOnly ? `Edit ${dateScopeLabel} Attendance` : `Save ${dateScopeLabel} Attendance`;
@@ -112,7 +115,11 @@ export function AttendanceChecklist({
                       key={snapshot.dateValue}
                       href={`${redirectTo}?date=${snapshot.dateValue}`}
                       className={`min-w-0 border-r border-[rgba(148,190,139,0.35)] px-2 py-2.5 text-center transition last:border-r-0 sm:px-3 sm:py-4 ${
-                        snapshot.active
+                        snapshot.noWork
+                          ? snapshot.active
+                            ? "bg-[#f3e7d3] text-[#5c4221]"
+                            : "bg-[#faf4e8] text-[#6b5a44] hover:bg-[#f4ead8]"
+                          : snapshot.active
                           ? "bg-[linear-gradient(180deg,#b7efb4_0%,#80cf89_100%)] text-[#123524]"
                           : snapshot.today
                             ? "bg-[#fff1cf] text-[#61420a] hover:bg-[#ffe6a8]"
@@ -120,11 +127,11 @@ export function AttendanceChecklist({
                       }`}
                     >
                       <div className="flex items-center justify-center gap-1 text-[11px] sm:gap-1.5 sm:text-xs">
-                        <span className={snapshot.active ? "text-[#14532d]" : snapshot.today ? "text-[#9a6411]" : "text-stone-500"}>{snapshot.dayLabel}</span>
+                        <span className={snapshot.noWork ? "text-[#8a6b41]" : snapshot.active ? "text-[#14532d]" : snapshot.today ? "text-[#9a6411]" : "text-stone-500"}>{snapshot.dayLabel}</span>
                         {snapshot.today ? <span className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] ${snapshot.active ? "bg-[#fff3bf] text-[#14532d]" : "bg-white text-[#9a6411]"}`}>Today</span> : null}
                       </div>
-                      <div className={`mt-0.5 text-xs font-medium sm:mt-1 sm:text-sm ${snapshot.active ? "text-[#14532d]" : snapshot.today ? "text-[#61420a]" : "text-stone-700"}`}>{snapshot.dateLabel}</div>
-                      <div className={`mt-1 truncate text-xs font-semibold leading-4 sm:mt-2 sm:min-h-[2.5rem] sm:text-sm sm:leading-5 ${snapshot.active ? "text-[#14532d]" : "text-stone-900"}`}>{snapshot.summary}</div>
+                      <div className={`mt-0.5 text-xs font-medium sm:mt-1 sm:text-sm ${snapshot.noWork ? "text-[#5c4221]" : snapshot.active ? "text-[#14532d]" : snapshot.today ? "text-[#61420a]" : "text-stone-700"}`}>{snapshot.dateLabel}</div>
+                      <div className={`mt-1 truncate text-xs font-semibold leading-4 sm:mt-2 sm:min-h-[2.5rem] sm:text-sm sm:leading-5 ${snapshot.noWork ? "text-[#5c4221]" : snapshot.active ? "text-[#14532d]" : "text-stone-900"}`}>{snapshot.summary}</div>
                     </Link>
                   ))}
                 </div>
@@ -147,6 +154,12 @@ export function AttendanceChecklist({
         <input type="hidden" name="date" value={dateValue} />
         <input type="hidden" name="redirectTo" value={redirectTo} />
 
+        {noWorkDay ? (
+          <div className="border-l-[6px] border-[#b8873b] bg-[#fbf4e8] px-4 py-5 sm:px-5">
+            <div className="text-sm font-semibold text-[#5c4221]">No work day</div>
+            <p className="mt-1 text-sm leading-6 text-[#74624c]">Attendance is not required for this date.</p>
+          </div>
+        ) : (
         <div className="divide-y divide-[rgba(148,190,139,0.28)]">
           {items.length ? (
             items.map((employee) => (
@@ -243,8 +256,9 @@ export function AttendanceChecklist({
             <div className="px-4 py-6 text-sm text-stone-600 sm:px-5">No active employees yet.</div>
           )}
         </div>
+        )}
 
-        {items.length ? (
+        {items.length && !noWorkDay ? (
           <div className="border-t border-[rgba(148,190,139,0.35)] px-4 py-4 sm:px-5">
             {isReadOnly ? (
               <Link

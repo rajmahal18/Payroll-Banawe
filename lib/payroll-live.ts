@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { differenceInCalendarDays } from "date-fns";
 import { endOfDayLocal, startOfDayLocal } from "@/lib/utils";
+import { countWorkDaysInclusive, isWorkDate, type WorkCalendar } from "@/lib/work-schedule";
 
 type AttendanceRecordLike = {
   date: Date;
@@ -21,11 +22,15 @@ export function getEffectivePayrollStart(periodStart: Date, employeeStartDate: D
     : normalizedPeriodStart;
 }
 
-export function getCoveredDaysForPayroll(periodStart: Date, periodEnd: Date, employeeStartDate: Date | null) {
+export function getCoveredDaysForPayroll(periodStart: Date, periodEnd: Date, employeeStartDate: Date | null, calendar?: WorkCalendar) {
   const effectiveStart = getEffectivePayrollStart(periodStart, employeeStartDate);
 
   if (effectiveStart > endOfDayLocal(periodEnd)) {
     return 0;
+  }
+
+  if (calendar) {
+    return countWorkDaysInclusive(effectiveStart, startOfDayLocal(periodEnd), calendar);
   }
 
   return differenceInCalendarDays(startOfDayLocal(periodEnd), effectiveStart) + 1;
@@ -52,20 +57,22 @@ export function getLivePayrollAttendanceMetrics({
   employee,
   periodStart,
   periodEnd,
-  attendanceRecords
+  attendanceRecords,
+  calendar
 }: {
   employee: EmployeePayrollLike;
   periodStart: Date;
   periodEnd: Date;
   attendanceRecords: AttendanceRecordLike[];
+  calendar?: WorkCalendar;
 }) {
   const effectiveAttendanceStart = getEffectivePayrollStart(periodStart, employee.startDate);
   const coveredAttendanceRecords = attendanceRecords.filter(
-    (record) => record.date >= effectiveAttendanceStart && record.date <= endOfDayLocal(periodEnd)
+    (record) => record.date >= effectiveAttendanceStart && record.date <= endOfDayLocal(periodEnd) && isWorkDate(record.date, calendar)
   );
   const daysAbsent = coveredAttendanceRecords.filter((record) => record.status === "ABSENT").length;
   const daysHalf = coveredAttendanceRecords.filter((record) => record.status === "HALF_DAY").length;
-  const coveredDays = getCoveredDaysForPayroll(periodStart, periodEnd, employee.startDate);
+  const coveredDays = getCoveredDaysForPayroll(periodStart, periodEnd, employee.startDate, calendar);
   const daysPresent = Math.max(coveredDays - daysAbsent - daysHalf, 0);
   const paidDayUnits = daysPresent + daysHalf * 0.5;
   const grossPay = paidDayUnits * Number(employee.dailyRate);
