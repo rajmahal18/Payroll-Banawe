@@ -145,6 +145,10 @@ async function requireShopEmployee(shopId: string, employeeId: string) {
   });
 }
 
+function isSameDateValue(left: Date, right: Date) {
+  return toDateInputValue(left) === toDateInputValue(right);
+}
+
 async function hasPayrollAttendanceMismatch(
   tx: Prisma.TransactionClient,
   periods: Array<{
@@ -1188,7 +1192,14 @@ export async function markPayrollPaidForDateAction(formData: FormData) {
           employee: {
             select: {
               id: true,
+              payrollFrequency: true,
+              weeklyPayDay: true,
+              monthlyPayDay: true,
+              twiceMonthlyDayOne: true,
+              twiceMonthlyDayTwo: true,
+              everyNDays: true,
               startDate: true,
+              lastPaidDate: true,
               dailyRate: true
             }
           }
@@ -1198,15 +1209,30 @@ export async function markPayrollPaidForDateAction(formData: FormData) {
   });
 
   const workCalendar = await getShopWorkCalendar(user.shop.id);
-  await prisma.$transaction((tx) => syncOpenPayrollEntriesWithWorkCalendar(tx, duePeriods, workCalendar));
+  const payablePeriods = duePeriods.filter((period) =>
+    period.payrollEntries.some((entry) => {
+      const expectedPeriod = getPeriodForPayDate(period.payDate, entry.employee, workCalendar);
+      return isSameDateValue(period.periodStart, expectedPeriod.periodStart) && isSameDateValue(period.periodEnd, expectedPeriod.periodEnd);
+    })
+  );
+
+  if (!payablePeriods.length) {
+    revalidatePath("/dashboard");
+    revalidatePath("/payroll");
+    redirect(
+      redirectTo === "/payroll"
+        ? `/payroll?error=no-due-payroll`
+        : `/dashboard?error=no-due-payroll&date=${toDateInputValue(targetDate)}`
+    );
+  }
+
+  const payablePeriodIds = payablePeriods.map((period) => period.id);
+  await prisma.$transaction((tx) => syncOpenPayrollEntriesWithWorkCalendar(tx, payablePeriods, workCalendar));
 
   await prisma.payrollPeriod.updateMany({
     where: {
       shopId: user.shop.id,
-      payDate: {
-        gte: startOfDayLocal(targetDate),
-        lte: endOfDayLocal(targetDate)
-      }
+      id: { in: payablePeriodIds }
     },
     data: {
       status: PayrollPeriodStatus.PAID
@@ -1217,10 +1243,7 @@ export async function markPayrollPaidForDateAction(formData: FormData) {
     where: {
       payrollPeriod: {
         shopId: user.shop.id,
-        payDate: {
-          gte: startOfDayLocal(targetDate),
-          lte: endOfDayLocal(targetDate)
-        }
+        id: { in: payablePeriodIds }
       }
     },
     include: {

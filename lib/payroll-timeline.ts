@@ -425,11 +425,18 @@ export async function getPayrollTimelineEntries({
       period.payrollEntries.forEach((entry) => {
         const alreadyIncluded = existing.details.some((detail) => detail.employeeId === entry.employee.id);
         if (alreadyIncluded) return;
+        const displayPeriod = period.status === "PAID" ? period : getPeriodForPayDate(period.payDate, entry.employee, workCalendar);
+        const isCurrentOpenPeriod =
+          period.status === "PAID" ||
+          (toDateInputValue(period.periodStart) === toDateInputValue(displayPeriod.periodStart) &&
+            toDateInputValue(period.periodEnd) === toDateInputValue(displayPeriod.periodEnd));
+
+        if (!isCurrentOpenPeriod) return;
 
         const liveMetrics = getLivePayrollAttendanceMetrics({
           employee: entry.employee,
-          periodStart: period.periodStart,
-          periodEnd: period.periodEnd,
+          periodStart: displayPeriod.periodStart,
+          periodEnd: displayPeriod.periodEnd,
           attendanceRecords: attendanceForEmployee(entry.employee.id),
           calendar: workCalendar
         });
@@ -447,8 +454,8 @@ export async function getPayrollTimelineEntries({
         }
         const employeeAttendance = attendanceForEmployee(entry.employee.id);
         const attendanceCalendarDays = buildAttendanceCalendarDays({
-          periodStart: period.periodStart,
-          periodEnd: period.periodEnd,
+          periodStart: displayPeriod.periodStart,
+          periodEnd: displayPeriod.periodEnd,
           attendanceRecords: employeeAttendance,
           workCalendar
         });
@@ -483,9 +490,10 @@ export async function getPayrollTimelineEntries({
       return groups;
     }, new Map<string, TimelineEntry>()).values()
   );
-  const actualPayDates = new Set(actualTimelineEntries.map((entry) => entry.payDateValue));
+  const visibleActualTimelineEntries = actualTimelineEntries.filter((entry) => entry.details.length > 0);
+  const actualPayDates = new Set(visibleActualTimelineEntries.map((entry) => entry.payDateValue));
 
-  return [...actualTimelineEntries, ...payrollTimelineEntries.filter((entry) => !actualPayDates.has(entry.payDateValue))]
+  return [...visibleActualTimelineEntries, ...payrollTimelineEntries.filter((entry) => !actualPayDates.has(entry.payDateValue))]
     .sort((a, b) => {
       if (a.isPaid !== b.isPaid) {
         return a.isPaid ? -1 : 1;

@@ -139,11 +139,11 @@ function PayrollTimelineModal({
           </div>
         </div>
 
-        <div className="space-y-3 overflow-y-auto px-5 py-4">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4 sm:px-5">
           {entry.details.map((detail) => (
             <div
               key={detail.employeeId}
-              className="rounded-[24px] border border-[rgba(148,190,139,0.36)] bg-[rgba(255,255,255,0.92)] px-4 py-4"
+              className="rounded-[22px] border border-[rgba(148,190,139,0.36)] bg-[rgba(255,255,255,0.92)] px-3 py-4 sm:rounded-[24px] sm:px-4"
             >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
@@ -155,16 +155,16 @@ function PayrollTimelineModal({
                     <span className="rounded-full bg-[rgba(229,245,224,0.92)] px-2.5 py-1 font-medium text-stone-700">{detail.periodLabel}</span>
                   </div>
                 </div>
-                <div className="rounded-[18px] bg-[rgba(230,241,237,0.74)] px-3 py-2 text-right">
+                <div className="w-full rounded-[18px] bg-[rgba(230,241,237,0.74)] px-3 py-2 text-left sm:w-auto sm:min-w-[172px] sm:text-right">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5f8f85]">Expected Take-Home</div>
                   <div className="mt-1 text-base font-semibold text-[#2d6258]">{formatMoney(detail.expectedAmount)}</div>
                 </div>
               </div>
 
-              <div className="mt-4 grid gap-3 lg:grid-cols-[0.9fr_1.1fr]">
-                <div className="rounded-[20px] bg-[rgba(229,245,224,0.86)] px-4 py-4 text-sm text-stone-700">
+              <div className="mt-4 grid items-start gap-3 lg:grid-cols-[0.9fr_1.1fr]">
+                <div className="min-w-0 rounded-[20px] bg-[rgba(229,245,224,0.86)] px-3 py-4 text-sm text-stone-700 sm:px-4">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">Attendance Summary</div>
-                  <div className="mt-3">
+                  <div className="mt-3 max-h-[18.75rem] overflow-y-auto pr-1">
                     <div className="grid grid-cols-7 gap-1.5">
                       {detail.attendanceCalendarDays.map((day) => (
                         <div
@@ -195,7 +195,7 @@ function PayrollTimelineModal({
                   <div className="mt-3 text-[#7a7168]">Daily rate: {formatMoney(detail.dailyRate)}</div>
                 </div>
 
-                <div className="rounded-[20px] bg-[rgba(229,245,224,0.86)] px-4 py-4">
+                <div className="min-w-0 rounded-[20px] bg-[rgba(229,245,224,0.86)] px-3 py-4 sm:px-4">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">Math Breakdown</div>
                     <div className="mt-3 space-y-2.5 text-sm text-stone-700">
                       <div className="flex items-center justify-between gap-4 rounded-[16px] bg-white/80 px-3 py-2">

@@ -546,11 +546,20 @@ export default async function DashboardPage({
           if (alreadyIncluded) {
             return;
           }
+          const displayPeriod = period.status === "PAID" ? period : getPeriodForPayDate(period.payDate, entry.employee, workCalendar);
+          const isCurrentOpenPeriod =
+            period.status === "PAID" ||
+            (toDateInputValue(period.periodStart) === toDateInputValue(displayPeriod.periodStart) &&
+              toDateInputValue(period.periodEnd) === toDateInputValue(displayPeriod.periodEnd));
+
+          if (!isCurrentOpenPeriod) {
+            return;
+          }
 
           const liveMetrics = getLivePayrollAttendanceMetrics({
             employee: entry.employee,
-            periodStart: period.periodStart,
-            periodEnd: period.periodEnd,
+            periodStart: displayPeriod.periodStart,
+            periodEnd: displayPeriod.periodEnd,
             attendanceRecords: attendanceByEmployee.get(entry.employee.id) ?? [],
             calendar: workCalendar
           });
@@ -568,8 +577,8 @@ export default async function DashboardPage({
             periodLabel: period.label.replace(/^Payroll - /, ""),
             calendarMode: entry.employee.payrollFrequency === "WEEKLY" ? "weekday" : "date",
             attendanceCalendarDays: buildAttendanceCalendarDays({
-              periodStart: period.periodStart,
-              periodEnd: period.periodEnd,
+              periodStart: displayPeriod.periodStart,
+              periodEnd: displayPeriod.periodEnd,
               attendanceRecords: attendanceByEmployee.get(entry.employee.id) ?? [],
               workCalendar
             }),
@@ -624,8 +633,9 @@ export default async function DashboardPage({
       }>()
     ).values()
   );
-  const actualPayDates = new Set(actualTimelineEntries.map((entry) => entry.payDateValue));
-  const mergedTimelineEntries: TimelineEntry[] = [...actualTimelineEntries, ...payrollTimelineEntries.filter((entry) => !actualPayDates.has(entry.payDateValue))]
+  const visibleActualTimelineEntries = actualTimelineEntries.filter((entry) => entry.details.length > 0);
+  const actualPayDates = new Set(visibleActualTimelineEntries.map((entry) => entry.payDateValue));
+  const mergedTimelineEntries: TimelineEntry[] = [...visibleActualTimelineEntries, ...payrollTimelineEntries.filter((entry) => !actualPayDates.has(entry.payDateValue))]
     .sort((a, b) => {
       if (a.isPaid !== b.isPaid) {
         return a.isPaid ? -1 : 1;
