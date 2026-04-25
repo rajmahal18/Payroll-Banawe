@@ -3,9 +3,12 @@ import { EmployeeCreateModal } from "@/components/employee-create-modal";
 import { PageHeader } from "@/components/page-header";
 import { EmployeeSearchForm } from "@/components/employee-search-form";
 import { PaginationControls } from "@/components/pagination-controls";
+import type { TimelineEmployeeDetail, TimelineEntry } from "@/components/payroll-due-timeline";
 import { requireUser } from "@/lib/auth";
+import { getLivePayrollAttendanceMetrics } from "@/lib/payroll-live";
+import { describePayrollFrequency, getPayDateForDate, getPeriodForPayDate } from "@/lib/payroll";
 import { prisma } from "@/lib/prisma";
-import { endOfDayLocal, formatDate, parseDateInputValue, startOfDayLocal, toDateInputValue } from "@/lib/utils";
+import { endOfDayLocal, formatDate, formatShortWeekday, parseDateInputValue, startOfDayLocal, toDateInputValue } from "@/lib/utils";
 import { getShopWorkCalendar, isWorkDate } from "@/lib/work-schedule";
 import { CalendarDays, UsersRound } from "lucide-react";
 
@@ -25,6 +28,44 @@ function buildEmployeesHref(params: { tab?: string; search?: string; page?: numb
 
   const value = query.toString();
   return value ? `/employees?${value}` : "/employees";
+}
+
+function addCalendarDays(date: Date, amount: number) {
+  return parseDateInputValue(toDateInputValue(new Date(date.getTime() + amount * 24 * 60 * 60 * 1000)));
+}
+
+function buildEmployeeAttendanceCalendarDays({
+  periodStart,
+  periodEnd,
+  attendanceRecords,
+  workCalendar
+}: {
+  periodStart: Date;
+  periodEnd: Date;
+  attendanceRecords: Array<{ date: Date; status: "PRESENT" | "HALF_DAY" | "ABSENT" }>;
+  workCalendar: Awaited<ReturnType<typeof getShopWorkCalendar>>;
+}): TimelineEmployeeDetail["attendanceCalendarDays"] {
+  const recordsByDate = new Map(attendanceRecords.map((record) => [toDateInputValue(record.date), record]));
+  const days: TimelineEmployeeDetail["attendanceCalendarDays"] = [];
+  let cursor = parseDateInputValue(toDateInputValue(periodStart));
+  const endValue = toDateInputValue(periodEnd);
+
+  while (toDateInputValue(cursor) <= endValue) {
+    const dateValue = toDateInputValue(cursor);
+    const record = recordsByDate.get(dateValue);
+    const workDay = isWorkDate(cursor, workCalendar);
+
+    days.push({
+      dateValue,
+      dayLabel: formatShortWeekday(cursor),
+      dateLabel: String(Number(dateValue.slice(-2))),
+      status: !workDay ? "NO_WORK" : record?.status === "ABSENT" ? "ABSENT" : record?.status === "HALF_DAY" ? "HALF_DAY" : "PRESENT"
+    });
+
+    cursor = addCalendarDays(cursor, 1);
+  }
+
+  return days;
 }
 
 export default async function EmployeesPage({
@@ -67,10 +108,21 @@ export default async function EmployeesPage({
         },
         payrollEntries: {
           select: {
+            daysPresent: true,
+            daysHalf: true,
+            daysAbsent: true,
+            grossPay: true,
+            totalBonusesAdded: true,
+            totalAdvancesDeducted: true,
+            totalPayablesDeducted: true,
+            netPay: true,
             payrollPeriod: {
               select: {
+                periodStart: true,
+                periodEnd: true,
                 payDate: true,
-                label: true
+                label: true,
+                status: true
               }
             }
           },
@@ -238,36 +290,175 @@ export default async function EmployeesPage({
       ) : (
         <>
           <EmployeeCardGrid
-            employees={employees.map((employee) => ({
-              id: employee.id,
-              employeeCode: employee.employeeCode,
-              fullName: employee.fullName,
-              position: employee.position,
-              dailyRate: employee.dailyRate.toString(),
-              status: employee.status,
-              payrollFrequency: employee.payrollFrequency,
-              weeklyPayDay: employee.weeklyPayDay,
-              monthlyPayDay: employee.monthlyPayDay,
-              twiceMonthlyDayOne: employee.twiceMonthlyDayOne,
-              twiceMonthlyDayTwo: employee.twiceMonthlyDayTwo,
-              everyNDays: employee.everyNDays,
-              startDate: employee.startDate ? employee.startDate.toISOString() : null,
-              lastPaidDate: employee.lastPaidDate ? employee.lastPaidDate.toISOString() : null,
-              contactNumber: employee.contactNumber,
-              photoDataUrl: employee.photoDataUrl,
-              notes: employee.notes,
-              createdAt: employee.createdAt.toISOString(),
-              updatedAt: employee.updatedAt.toISOString(),
-              attendanceRecords: employee.attendanceRecords.map((record) => ({
-                date: record.date.toISOString(),
-                status: record.status,
-                remarks: record.remarks
-              })),
-              payrollDates: employee.payrollEntries.map((entry) => ({
-                date: entry.payrollPeriod.payDate.toISOString(),
-                label: entry.payrollPeriod.label
-              }))
-            }))}
+            employees={employees.map((employee) => {
+              const baseDate =
+                employee.startDate && startOfDayLocal(employee.startDate) > startOfDayLocal(new Date())
+                  ? startOfDayLocal(employee.startDate)
+                  : startOfDayLocal(new Date());
+              const upcomingPayDate = getPayDateForDate(baseDate, employee, workCalendar);
+              const upcomingPeriod = getPeriodForPayDate(upcomingPayDate, employee, workCalendar);
+              const lastPaidEntry = employee.payrollEntries.find((entry) => entry.payrollPeriod.status === "PAID") ?? null;
+              const upcomingMetrics = getLivePayrollAttendanceMetrics({
+                employee,
+                periodStart: upcomingPeriod.periodStart,
+                periodEnd: upcomingPeriod.periodEnd,
+                attendanceRecords: employee.attendanceRecords,
+                calendar: workCalendar
+              });
+              const buildPayrollDetail = ({
+                periodStart,
+                periodEnd,
+                periodLabel,
+                daysPresent,
+                daysHalf,
+                daysAbsent,
+                paidDayUnits,
+                grossPay,
+                bonusesAdded,
+                advancesDeducted,
+                payablesDeducted,
+                expectedAmount
+              }: {
+                periodStart: Date;
+                periodEnd: Date;
+                periodLabel: string;
+                daysPresent: number;
+                daysHalf: number;
+                daysAbsent: number;
+                paidDayUnits: number;
+                grossPay: number;
+                bonusesAdded: number;
+                advancesDeducted: number;
+                payablesDeducted: number;
+                expectedAmount: number;
+              }): TimelineEmployeeDetail => {
+                const periodRecords = employee.attendanceRecords.filter(
+                  (record) => record.date >= startOfDayLocal(periodStart) && record.date <= endOfDayLocal(periodEnd)
+                );
+
+                return {
+                  employeeId: employee.id,
+                  employeeName: employee.fullName,
+                  employeeCode: employee.employeeCode,
+                  photoDataUrl: employee.photoDataUrl,
+                  position: employee.position,
+                  frequencyLabel: describePayrollFrequency(employee),
+                  periodLabel,
+                  calendarMode: employee.payrollFrequency === "WEEKLY" ? "weekday" : "date",
+                  attendanceCalendarDays: buildEmployeeAttendanceCalendarDays({
+                    periodStart,
+                    periodEnd,
+                    attendanceRecords: periodRecords,
+                    workCalendar
+                  }),
+                  absentDates: periodRecords.filter((record) => record.status === "ABSENT").map((record) => toDateInputValue(record.date)),
+                  halfDayDates: periodRecords.filter((record) => record.status === "HALF_DAY").map((record) => toDateInputValue(record.date)),
+                  daysAbsent,
+                  daysHalf,
+                  estimatedDays: daysPresent,
+                  paidDayUnits,
+                  dailyRate: Number(employee.dailyRate),
+                  grossPay,
+                  bonusesAdded,
+                  advancesDeducted,
+                  payablesDeducted,
+                  manualOtherDeductionAmount: 0,
+                  expectedAmount
+                };
+              };
+              const lastPaidTimelineEntry: TimelineEntry | null = lastPaidEntry
+                ? {
+                    id: `employee-${employee.id}-paid-${toDateInputValue(lastPaidEntry.payrollPeriod.payDate)}`,
+                    payDateValue: toDateInputValue(lastPaidEntry.payrollPeriod.payDate),
+                    payDateLabel: formatDate(lastPaidEntry.payrollPeriod.payDate),
+                    dueLabel: "Paid",
+                    isPaid: true,
+                    expectedTotal: Number(lastPaidEntry.netPay),
+                    employeeNames: [employee.fullName],
+                    details: [
+                      buildPayrollDetail({
+                        periodStart: lastPaidEntry.payrollPeriod.periodStart,
+                        periodEnd: lastPaidEntry.payrollPeriod.periodEnd,
+                        periodLabel: lastPaidEntry.payrollPeriod.label.replace(/^Payroll - /, ""),
+                        daysPresent: lastPaidEntry.daysPresent,
+                        daysHalf: Number(lastPaidEntry.daysHalf ?? 0),
+                        daysAbsent: lastPaidEntry.daysAbsent,
+                        paidDayUnits: lastPaidEntry.daysPresent + Number(lastPaidEntry.daysHalf ?? 0) * 0.5,
+                        grossPay: Number(lastPaidEntry.grossPay),
+                        bonusesAdded: Number(lastPaidEntry.totalBonusesAdded),
+                        advancesDeducted: Number(lastPaidEntry.totalAdvancesDeducted),
+                        payablesDeducted: Number(lastPaidEntry.totalPayablesDeducted),
+                        expectedAmount: Number(lastPaidEntry.netPay)
+                      })
+                    ]
+                  }
+                : null;
+              const upcomingTimelineEntry: TimelineEntry = {
+                id: `employee-${employee.id}-upcoming-${toDateInputValue(upcomingPayDate)}`,
+                payDateValue: toDateInputValue(upcomingPayDate),
+                payDateLabel: formatDate(upcomingPayDate),
+                dueLabel: "Upcoming",
+                isPaid: false,
+                expectedTotal: upcomingMetrics.grossPay,
+                employeeNames: [employee.fullName],
+                details: [
+                  buildPayrollDetail({
+                    periodStart: upcomingPeriod.periodStart,
+                    periodEnd: upcomingPeriod.periodEnd,
+                    periodLabel: upcomingPeriod.label,
+                    daysPresent: upcomingMetrics.daysPresent,
+                    daysHalf: upcomingMetrics.daysHalf,
+                    daysAbsent: upcomingMetrics.daysAbsent,
+                    paidDayUnits: upcomingMetrics.paidDayUnits,
+                    grossPay: upcomingMetrics.grossPay,
+                    bonusesAdded: 0,
+                    advancesDeducted: 0,
+                    payablesDeducted: 0,
+                    expectedAmount: upcomingMetrics.grossPay
+                  })
+                ]
+              };
+
+              return {
+                id: employee.id,
+                employeeCode: employee.employeeCode,
+                fullName: employee.fullName,
+                position: employee.position,
+                dailyRate: employee.dailyRate.toString(),
+                status: employee.status,
+                payrollFrequency: employee.payrollFrequency,
+                weeklyPayDay: employee.weeklyPayDay,
+                monthlyPayDay: employee.monthlyPayDay,
+                twiceMonthlyDayOne: employee.twiceMonthlyDayOne,
+                twiceMonthlyDayTwo: employee.twiceMonthlyDayTwo,
+                everyNDays: employee.everyNDays,
+                startDate: employee.startDate ? employee.startDate.toISOString() : null,
+                lastPaidDate: employee.lastPaidDate ? employee.lastPaidDate.toISOString() : null,
+                contactNumber: employee.contactNumber,
+                photoDataUrl: employee.photoDataUrl,
+                notes: employee.notes,
+                createdAt: employee.createdAt.toISOString(),
+                updatedAt: employee.updatedAt.toISOString(),
+                attendanceRecords: employee.attendanceRecords.map((record) => ({
+                  date: record.date.toISOString(),
+                  status: record.status,
+                  remarks: record.remarks
+                })),
+                payrollDates: employee.payrollEntries.map((entry) => ({
+                  date: entry.payrollPeriod.payDate.toISOString(),
+                  label: entry.payrollPeriod.label
+                })),
+                payrollSnapshot: {
+                  lastPaidDate: lastPaidEntry ? lastPaidEntry.payrollPeriod.payDate.toISOString() : employee.lastPaidDate?.toISOString() ?? null,
+                  lastPaidLabel: lastPaidEntry ? lastPaidEntry.payrollPeriod.label.replace(/^Payroll - /, "") : null,
+                  lastPaidAmount: lastPaidEntry ? lastPaidEntry.netPay.toString() : null,
+                  upcomingPayDate: upcomingPayDate.toISOString(),
+                  upcomingPeriodLabel: upcomingPeriod.label,
+                  lastPaidEntry: lastPaidTimelineEntry,
+                  upcomingEntry: upcomingTimelineEntry
+                }
+              };
+            })}
           />
           <PaginationControls
             pathname="/employees"

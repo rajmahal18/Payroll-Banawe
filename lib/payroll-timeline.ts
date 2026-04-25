@@ -127,6 +127,8 @@ export async function getPayrollTimelineEntries({
             id: true,
             employeeId: true,
             date: true,
+            type: true,
+            remarks: true,
             remainingBalance: true
           },
           orderBy: [{ employeeId: "asc" }, { date: "asc" }]
@@ -263,6 +265,8 @@ export async function getPayrollTimelineEntries({
         .map((payable) => ({
           id: payable.id,
           date: payable.date,
+          type: payable.type,
+          remarks: payable.remarks,
           remainingBalance: Number(payable.remainingBalance)
         }))
     ])
@@ -291,8 +295,17 @@ export async function getPayrollTimelineEntries({
       let runningNet = liveMetrics.grossPay + bonusAdded;
       let advancesDeducted = 0;
       let payablesDeducted = 0;
+      const payDateKey = toDateInputValue(event.payDate);
       const employeeAdvances = simulatedAdvancesByEmployee.get(event.employee.id) ?? [];
       const employeePayables = simulatedPayablesByEmployee.get(event.employee.id) ?? [];
+      const manualOtherDeductionAmount = employeePayables
+        .filter(
+          (payable) =>
+            payable.type === "OTHER" &&
+            payable.remarks === "Payroll modal manual deduction" &&
+            toDateInputValue(payable.date) === payDateKey
+        )
+        .reduce((total, payable) => total + payable.remainingBalance, 0);
 
       for (const advance of employeeAdvances) {
         if (runningNet <= 0) break;
@@ -327,7 +340,6 @@ export async function getPayrollTimelineEntries({
       }
 
       const expectedAmount = runningNet;
-      const payDateKey = toDateInputValue(event.payDate);
       const dueOffset = differenceInWorkDays(event.payDate, todayStart, workCalendar);
       const periodStatuses = periodStatusByDate.get(payDateKey) ?? [];
       const isPaid = periodStatuses.length > 0 && periodStatuses.every((status) => status === "PAID");
@@ -382,6 +394,7 @@ export async function getPayrollTimelineEntries({
         bonusesAdded: bonusAdded,
         advancesDeducted,
         payablesDeducted,
+        manualOtherDeductionAmount,
         expectedAmount
       });
       groups.set(payDateKey, existing);
@@ -484,6 +497,7 @@ export async function getPayrollTimelineEntries({
           bonusesAdded,
           advancesDeducted,
           payablesDeducted,
+          manualOtherDeductionAmount: 0,
           expectedAmount: displayedAmount
         });
       });

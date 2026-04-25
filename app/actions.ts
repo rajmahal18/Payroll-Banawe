@@ -19,6 +19,7 @@ const employeePhotoSchema = z
   .max(220_000)
   .regex(/^data:image\/(?:jpeg|jpg|png|webp);base64,[a-zA-Z0-9+/=]+$/)
   .optional();
+const PAYROLL_MANUAL_DEDUCTION_REMARK = "Payroll modal manual deduction";
 
 async function withActionTimeout<T>(promise: Promise<T>, timeoutMs = ACTION_TIMEOUT_MS) {
   let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -1087,6 +1088,79 @@ export async function createPayableAction(formData: FormData) {
   revalidatePath("/payables");
   revalidatePath("/dashboard");
   redirect("/payables");
+}
+
+export async function setPayrollOtherDeductionAction(formData: FormData) {
+  const user = await requireUser();
+  const schema = z.object({
+    employeeId: z.string().min(1),
+    payDate: z.string().min(1),
+    amount: z.union([z.literal(""), z.coerce.number().min(0)]),
+    redirectTo: z.string().optional()
+  });
+
+  const parsed = schema.parse({
+    employeeId: formData.get("employeeId"),
+    payDate: formData.get("payDate"),
+    amount: formData.get("amount"),
+    redirectTo: optionalFormString(formData.get("redirectTo"))
+  });
+  const employee = await requireShopEmployee(user.shop.id, parsed.employeeId);
+  const payDate = parseDateInputValue(parsed.payDate);
+  const amount = parsed.amount === "" ? new Prisma.Decimal(0) : new Prisma.Decimal(parsed.amount);
+  const existing = await prisma.payable.findFirst({
+    where: {
+      employeeId: employee.id,
+      date: payDate,
+      type: DeductionType.OTHER,
+      status: LedgerStatus.OPEN,
+      remarks: PAYROLL_MANUAL_DEDUCTION_REMARK
+    }
+  });
+
+  if (amount.equals(0)) {
+    if (existing) {
+      if (existing.deductedAmount.equals(0)) {
+        await prisma.payable.delete({ where: { id: existing.id } });
+      } else {
+        await prisma.payable.update({
+          where: { id: existing.id },
+          data: {
+            remainingBalance: new Prisma.Decimal(0),
+            status: LedgerStatus.CANCELLED
+          }
+        });
+      }
+    }
+  } else if (existing) {
+    const deductedAmount = existing.deductedAmount.greaterThan(amount) ? amount : existing.deductedAmount;
+    await prisma.payable.update({
+      where: { id: existing.id },
+      data: {
+        amount,
+        deductedAmount,
+        remainingBalance: amount.minus(deductedAmount),
+        status: LedgerStatus.OPEN
+      }
+    });
+  } else {
+    await prisma.payable.create({
+      data: {
+        employeeId: employee.id,
+        date: payDate,
+        amount,
+        deductedAmount: new Prisma.Decimal(0),
+        remainingBalance: amount,
+        type: DeductionType.OTHER,
+        remarks: PAYROLL_MANUAL_DEDUCTION_REMARK,
+        status: LedgerStatus.OPEN
+      }
+    });
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/payroll");
+  redirect(parsed.redirectTo === "/payroll" ? "/payroll" : `/dashboard?date=${parsed.payDate}`);
 }
 
 export async function savePayrollSettingsAction(formData: FormData) {

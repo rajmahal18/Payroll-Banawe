@@ -7,6 +7,7 @@ type AttendanceChecklistItem = {
   id: string;
   fullName: string;
   position: string | null;
+  photoDataUrl: string | null;
   status: "PRESENT" | "HALF_DAY" | "ABSENT";
   remarks: string | null;
 };
@@ -29,6 +30,23 @@ function shiftDateValue(value: string, days: number) {
   const day = String(date.getDate()).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
+}
+
+function initials(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+}
+
+function AttendanceAvatar({ employee }: { employee: Pick<AttendanceChecklistItem, "fullName" | "photoDataUrl"> }) {
+  return (
+    <span className="inline-grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-xl border border-white/80 bg-[linear-gradient(135deg,#e6f1ed_0%,#edf3fa_100%)] text-xs font-semibold text-[#678c84] shadow-sm sm:h-10 sm:w-10 sm:rounded-2xl">
+      {employee.photoDataUrl ? <img src={employee.photoDataUrl} alt="" className="h-full w-full object-cover" /> : initials(employee.fullName)}
+    </span>
+  );
 }
 
 export function AttendanceChecklist({
@@ -72,12 +90,6 @@ export function AttendanceChecklist({
       : status === "HALF_DAY"
         ? "border-l-[6px] border-[#84a83b] bg-[rgba(247,252,231,0.94)] hover:bg-[rgba(239,250,210,0.98)]"
         : "border-l-[6px] border-[#2f7d5b] bg-[rgba(232,248,226,0.86)] hover:bg-[rgba(218,244,211,0.94)]";
-  const getStatusIcon = (status: AttendanceChecklistItem["status"]) =>
-    status === "ABSENT"
-      ? "border-rose-200 bg-rose-50 text-rose-700"
-      : status === "HALF_DAY"
-        ? "border-lime-200 bg-lime-50 text-lime-700"
-        : "border-emerald-200 bg-emerald-50 text-emerald-700";
   const getOptionStyles = (option: AttendanceChecklistItem["status"]) =>
     option === "ABSENT"
       ? "has-[:checked]:border-rose-300 has-[:checked]:bg-rose-50 has-[:checked]:text-rose-700"
@@ -167,9 +179,7 @@ export function AttendanceChecklist({
                 <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-center">
                   <label className={`min-w-0 ${isReadOnly ? "cursor-default" : "cursor-pointer"}`}>
                     <span className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1 sm:gap-x-3">
-                      <span className={`inline-flex h-6 min-w-6 items-center justify-center rounded-lg border text-[9px] font-semibold sm:h-7 sm:min-w-7 sm:rounded-xl sm:text-[10px] ${getStatusIcon(employee.status)}`}>
-                        {employee.status === "ABSENT" ? "A" : employee.status === "HALF_DAY" ? "1/2" : "P"}
-                      </span>
+                      <AttendanceAvatar employee={employee} />
                       <span className="grid min-w-0 grid-cols-2 items-center gap-x-2 gap-y-0.5 sm:block">
                         <span className="truncate text-sm font-semibold text-stone-950">{employee.fullName}</span>
                         <span className="truncate text-right text-xs text-stone-500 sm:mt-1 sm:block sm:text-left">{employee.position || "No position"}</span>

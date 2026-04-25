@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { CalendarClock, CheckCheck, ChevronRight, Coins, ReceiptText, UsersRound, WalletCards, X } from "lucide-react";
-import { markPayrollPaidForDateAction } from "@/app/actions";
+import { markPayrollPaidForDateAction, setPayrollOtherDeductionAction } from "@/app/actions";
 import { formatDate, formatMoney, parseDateInputValue } from "@/lib/utils";
 
 export type TimelineEmployeeDetail = {
@@ -32,6 +32,7 @@ export type TimelineEmployeeDetail = {
   bonusesAdded: number;
   advancesDeducted: number;
   payablesDeducted: number;
+  manualOtherDeductionAmount: number;
   expectedAmount: number;
 };
 
@@ -111,16 +112,18 @@ function isTodayEntry(entry: TimelineEntry) {
   return !entry.isPaid && entry.dueLabel === "Today";
 }
 
-function PayrollTimelineModal({
+export function PayrollTimelineModal({
   entry,
   open,
   onClose,
-  mode = "compact"
+  mode = "compact",
+  allowMarkPaid = true
 }: {
   entry: TimelineEntry | null;
   open: boolean;
   onClose: () => void;
   mode?: "compact" | "full";
+  allowMarkPaid?: boolean;
 }) {
   const [mounted, setMounted] = useState(false);
 
@@ -158,7 +161,7 @@ function PayrollTimelineModal({
                 <CheckCheck className="h-4 w-4" />
                 Paid
               </div>
-            ) : (
+            ) : allowMarkPaid ? (
               <form action={markPayrollPaidForDateAction}>
                 <input type="hidden" name="payDate" value={entry.payDateValue} />
                 {mode === "full" ? <input type="hidden" name="redirectTo" value="/payroll" /> : null}
@@ -167,6 +170,11 @@ function PayrollTimelineModal({
                   Mark as Paid
                 </button>
               </form>
+            ) : (
+              <div className="inline-flex items-center gap-2 rounded-2xl border border-[rgba(197,222,244,0.9)] bg-[rgba(232,244,255,0.8)] px-3 py-2 text-sm font-semibold text-[#44739f]">
+                <WalletCards className="h-4 w-4" />
+                {entry.dueLabel}
+              </div>
             )}
             <button
               type="button"
@@ -259,9 +267,36 @@ function PayrollTimelineModal({
                         <div className="shrink-0 font-semibold text-[#8d5f14]">- {formatMoney(detail.advancesDeducted)}</div>
                     </div>
 
-                    <div className="flex items-center justify-between gap-4 rounded-[16px] bg-white/80 px-3 py-2">
-                      <div className="font-medium text-stone-950">Less other deductions</div>
-                      <div className="shrink-0 font-semibold text-[#8d5f14]">- {formatMoney(detail.payablesDeducted)}</div>
+                    <div className="rounded-[16px] bg-white/80 px-3 py-2">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <div className="font-medium text-stone-950">Less other deductions</div>
+                          {detail.manualOtherDeductionAmount > 0 ? (
+                            <div className="text-xs text-[#7a7168]">Includes manual payroll deduction</div>
+                          ) : null}
+                        </div>
+                        <div className="shrink-0 font-semibold text-[#8d5f14]">- {formatMoney(detail.payablesDeducted)}</div>
+                      </div>
+                      {!entry.isPaid ? (
+                        <form action={setPayrollOtherDeductionAction} className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                          <input type="hidden" name="employeeId" value={detail.employeeId} />
+                          <input type="hidden" name="payDate" value={entry.payDateValue} />
+                          {mode === "full" ? <input type="hidden" name="redirectTo" value="/payroll" /> : null}
+                          <input
+                            name="amount"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            defaultValue={detail.manualOtherDeductionAmount || ""}
+                            placeholder="Manual amount"
+                            aria-label={`Manual other deduction for ${detail.employeeName}`}
+                            className="min-w-0 rounded-xl px-3 py-2 text-xs"
+                          />
+                          <button className="rounded-xl bg-[#8d5f14] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#744d10]">
+                            Save
+                          </button>
+                        </form>
+                      ) : null}
                     </div>
 
                       <div className="flex items-center justify-between gap-4 rounded-[18px] border border-[rgba(160,205,190,0.9)] bg-[rgba(236,247,243,0.96)] px-3 py-3">

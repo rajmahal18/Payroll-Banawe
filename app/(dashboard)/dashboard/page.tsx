@@ -169,6 +169,8 @@ export default async function DashboardPage({
             id: true,
             employeeId: true,
             date: true,
+            type: true,
+            remarks: true,
             remainingBalance: true
           },
           orderBy: [{ employeeId: "asc" }, { date: "asc" }]
@@ -307,6 +309,8 @@ export default async function DashboardPage({
         .map((payable) => ({
           id: payable.id,
           date: payable.date,
+          type: payable.type,
+          remarks: payable.remarks,
           remainingBalance: Number(payable.remainingBalance)
         }))
     ])
@@ -336,8 +340,17 @@ export default async function DashboardPage({
         let runningNet = liveMetrics.grossPay + bonusAdded;
         let advancesDeducted = 0;
         let payablesDeducted = 0;
+        const payDateKey = toDateInputValue(event.payDate);
         const employeeAdvances = simulatedAdvancesByEmployee.get(event.employee.id) ?? [];
         const employeePayables = simulatedPayablesByEmployee.get(event.employee.id) ?? [];
+        const manualOtherDeductionAmount = employeePayables
+          .filter(
+            (payable) =>
+              payable.type === "OTHER" &&
+              payable.remarks === "Payroll modal manual deduction" &&
+              toDateInputValue(payable.date) === payDateKey
+          )
+          .reduce((total, payable) => total + payable.remainingBalance, 0);
 
         for (const advance of employeeAdvances) {
           if (runningNet <= 0) break;
@@ -372,7 +385,6 @@ export default async function DashboardPage({
         }
 
         const expectedAmount = runningNet;
-        const payDateKey = toDateInputValue(event.payDate);
         const key = payDateKey;
         const dueOffset = differenceInBusinessDays(event.payDate, todayStart);
         const periodStatuses = periodStatusByDate.get(payDateKey) ?? [];
@@ -417,6 +429,7 @@ export default async function DashboardPage({
             bonusesAdded: number;
             advancesDeducted: number;
             payablesDeducted: number;
+            manualOtherDeductionAmount: number;
             expectedAmount: number;
           }>
         };
@@ -449,6 +462,7 @@ export default async function DashboardPage({
           bonusesAdded: bonusAdded,
           advancesDeducted,
           payablesDeducted,
+          manualOtherDeductionAmount,
           expectedAmount
         });
         groups.set(key, existing);
@@ -484,6 +498,7 @@ export default async function DashboardPage({
           bonusesAdded: number;
           advancesDeducted: number;
           payablesDeducted: number;
+          manualOtherDeductionAmount: number;
           expectedAmount: number;
         }>;
       }>()
@@ -536,6 +551,7 @@ export default async function DashboardPage({
             bonusesAdded: number;
             advancesDeducted: number;
             payablesDeducted: number;
+            manualOtherDeductionAmount: number;
             expectedAmount: number;
           }>
         };
@@ -598,6 +614,7 @@ export default async function DashboardPage({
             bonusesAdded: "totalBonusesAdded" in entry ? Number(entry.totalBonusesAdded ?? 0) : 0,
             advancesDeducted: Number(entry.totalAdvancesDeducted),
             payablesDeducted: Number(entry.totalPayablesDeducted),
+            manualOtherDeductionAmount: 0,
             expectedAmount: Number(entry.netPay)
           });
         });
@@ -634,6 +651,7 @@ export default async function DashboardPage({
           bonusesAdded: number;
           advancesDeducted: number;
           payablesDeducted: number;
+          manualOtherDeductionAmount: number;
           expectedAmount: number;
         }>;
       }>()
@@ -770,6 +788,7 @@ export default async function DashboardPage({
               id: employee.id,
               fullName: employee.fullName,
               position: employee.position,
+              photoDataUrl: employee.photoDataUrl,
               status: record?.status ?? "PRESENT",
               remarks: record?.remarks || null
             };

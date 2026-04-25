@@ -7,6 +7,7 @@ import { Clock3, EllipsisVertical, Eye, Pencil, Power, Trash2, X } from "lucide-
 import { deleteEmployeeAction, toggleEmployeeStatusAction, updateEmployeeAction } from "@/app/actions";
 import { EmployeePhotoField } from "@/components/employee-photo-field";
 import { PayrollScheduleFields } from "@/components/employee-payroll-schedule-fields";
+import { PayrollTimelineModal, type TimelineEntry } from "@/components/payroll-due-timeline";
 import { BUSINESS_TIME_ZONE, formatDate, getWeekdayLabel, toDateInputValue } from "@/lib/utils";
 
 type EmployeeCardItem = {
@@ -38,6 +39,15 @@ type EmployeeCardItem = {
     date: string;
     label: string;
   }>;
+  payrollSnapshot: {
+    lastPaidDate: string | null;
+    lastPaidLabel: string | null;
+    lastPaidAmount: string | null;
+    upcomingPayDate: string | null;
+    upcomingPeriodLabel: string | null;
+    lastPaidEntry: TimelineEntry | null;
+    upcomingEntry: TimelineEntry | null;
+  };
 };
 
 function formatDateLabel(value?: string | null) {
@@ -241,6 +251,7 @@ function EmployeeViewModal({
   onClose: () => void;
 }) {
   const [mounted, setMounted] = useState(false);
+  const [payrollEntry, setPayrollEntry] = useState<TimelineEntry | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -300,8 +311,42 @@ function EmployeeViewModal({
               <div className="mt-1 text-sm font-semibold text-stone-950">{formatDateLabel(employee.startDate)}</div>
             </div>
             <div className="rounded-[22px] border border-[rgba(226,219,211,0.82)] bg-[rgba(255,255,255,0.72)] p-4">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">Last Paid</div>
-              <div className="mt-1 text-sm font-semibold text-stone-950">{formatDateLabel(employee.lastPaidDate)}</div>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">Last Paid</div>
+                  <div className="mt-1 text-sm font-semibold text-stone-950">{formatDateLabel(employee.payrollSnapshot.lastPaidDate)}</div>
+                  <div className="mt-1 text-xs text-[#7a7168]">
+                    {employee.payrollSnapshot.lastPaidAmount
+                      ? `${formatMoneyLabel(employee.payrollSnapshot.lastPaidAmount)} net pay`
+                      : employee.payrollSnapshot.lastPaidLabel || "No paid payroll yet"}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => employee.payrollSnapshot.lastPaidEntry && setPayrollEntry(employee.payrollSnapshot.lastPaidEntry)}
+                  disabled={!employee.payrollSnapshot.lastPaidEntry}
+                  className="rounded-xl border border-[rgba(88,150,88,0.36)] bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 transition hover:bg-[#edf8e9] disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  View
+                </button>
+              </div>
+            </div>
+            <div className="rounded-[22px] border border-[rgba(226,219,211,0.82)] bg-[rgba(255,255,255,0.72)] p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">Upcoming Payroll</div>
+                  <div className="mt-1 text-sm font-semibold text-stone-950">{formatDateLabel(employee.payrollSnapshot.upcomingPayDate)}</div>
+                  <div className="mt-1 text-xs text-[#7a7168]">{employee.payrollSnapshot.upcomingPeriodLabel || "No upcoming payroll scheduled"}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => employee.payrollSnapshot.upcomingEntry && setPayrollEntry(employee.payrollSnapshot.upcomingEntry)}
+                  disabled={!employee.payrollSnapshot.upcomingEntry}
+                  className="rounded-xl border border-[rgba(88,150,88,0.36)] bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 transition hover:bg-[#edf8e9] disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  View
+                </button>
+              </div>
             </div>
             <div className="rounded-[22px] border border-[rgba(226,219,211,0.82)] bg-[rgba(255,255,255,0.72)] p-4 sm:col-span-2">
               <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">Payroll Schedule</div>
@@ -318,6 +363,7 @@ function EmployeeViewModal({
           </div>
         </div>
       </div>
+      <PayrollTimelineModal entry={payrollEntry} open={Boolean(payrollEntry)} onClose={() => setPayrollEntry(null)} allowMarkPaid={false} />
     </div>,
     document.body
   );
@@ -605,7 +651,16 @@ export function EmployeeCardGrid({ employees }: { employees: EmployeeCardItem[] 
         {employees.map((employee) => (
           <article
             key={employee.id}
-            className={`relative rounded-[28px] border border-[rgba(232,191,115,0.62)] bg-[linear-gradient(135deg,rgba(250,238,224,0.78)_0%,rgba(245,250,247,0.94)_58%,rgba(255,255,255,0.98)_100%)] p-5 shadow-[0_18px_42px_-30px_rgba(108,89,70,0.16)] ${
+            role="button"
+            tabIndex={0}
+            onClick={() => setViewEmployee(employee)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                setViewEmployee(employee);
+              }
+            }}
+            className={`relative cursor-pointer rounded-[28px] border border-[rgba(232,191,115,0.62)] bg-[linear-gradient(135deg,rgba(250,238,224,0.78)_0%,rgba(245,250,247,0.94)_58%,rgba(255,255,255,0.98)_100%)] p-5 shadow-[0_18px_42px_-30px_rgba(108,89,70,0.16)] transition hover:-translate-y-0.5 hover:shadow-[0_22px_48px_-34px_rgba(108,89,70,0.24)] focus:outline-none focus:ring-4 focus:ring-[rgba(111,156,144,0.22)] ${
               menuOpenFor === employee.id ? "z-30 overflow-visible" : "overflow-hidden"
             }`}
           >
@@ -629,7 +684,11 @@ export function EmployeeCardGrid({ employees }: { employees: EmployeeCardItem[] 
                   </div>
                 </div>
 
-                <div ref={menuOpenFor === employee.id ? menuRef : undefined} className="relative">
+                <div
+                  ref={menuOpenFor === employee.id ? menuRef : undefined}
+                  className="relative"
+                  onClick={(event) => event.stopPropagation()}
+                >
                   <button
                     type="button"
                     onClick={() => setMenuOpenFor((current) => (current === employee.id ? null : employee.id))}
