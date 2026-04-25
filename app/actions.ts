@@ -437,6 +437,10 @@ function ensureEmployeeScheduleAnchor({
   }
 }
 
+function optionalFormString(value: FormDataEntryValue | null) {
+  return typeof value === "string" ? value : undefined;
+}
+
 export async function loginAction(formData: FormData) {
   const schema = z.object({
     email: z.string().email(),
@@ -523,12 +527,12 @@ export async function createEmployeeAction(formData: FormData) {
 
   const parsed = schema.parse({
     fullName: formData.get("fullName"),
-    position: formData.get("position"),
+    position: optionalFormString(formData.get("position")),
     dailyRate: formData.get("dailyRate"),
-    contactNumber: formData.get("contactNumber"),
-    startDate: formData.get("startDate"),
-    lastPaidDate: formData.get("lastPaidDate"),
-    notes: formData.get("notes")
+    contactNumber: optionalFormString(formData.get("contactNumber")),
+    startDate: optionalFormString(formData.get("startDate")),
+    lastPaidDate: optionalFormString(formData.get("lastPaidDate")),
+    notes: optionalFormString(formData.get("notes"))
   });
 
   ensureEmployeeScheduleAnchor({
@@ -570,12 +574,12 @@ export async function updateEmployeeAction(formData: FormData) {
   const parsed = schema.parse({
     employeeId: formData.get("employeeId"),
     fullName: formData.get("fullName"),
-    position: formData.get("position"),
+    position: optionalFormString(formData.get("position")),
     dailyRate: formData.get("dailyRate"),
-    contactNumber: formData.get("contactNumber"),
-    startDate: formData.get("startDate"),
-    lastPaidDate: formData.get("lastPaidDate"),
-    notes: formData.get("notes")
+    contactNumber: optionalFormString(formData.get("contactNumber")),
+    startDate: optionalFormString(formData.get("startDate")),
+    lastPaidDate: optionalFormString(formData.get("lastPaidDate")),
+    notes: optionalFormString(formData.get("notes"))
   });
 
   ensureEmployeeScheduleAnchor({

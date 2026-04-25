@@ -27,7 +27,12 @@ export default async function LoginPage({
     <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_10%_8%,rgba(74,222,128,0.22)_0%,rgba(74,222,128,0)_32%),radial-gradient(circle_at_92%_0%,rgba(20,184,166,0.15)_0%,rgba(20,184,166,0)_26%),linear-gradient(180deg,#f7fff3_0%,#edf8e9_48%,#dcefd8_100%)] px-4 py-8">
       <div className="grid w-full max-w-6xl overflow-hidden rounded-[2rem] border border-[rgba(88,150,88,0.34)] bg-[rgba(250,255,247,0.98)] shadow-[0_28px_64px_-40px_rgba(22,78,43,0.24)] lg:grid-cols-[1.04fr_0.96fr]">
         <div className="bg-[radial-gradient(circle_at_15%_10%,rgba(187,247,208,0.25)_0%,rgba(187,247,208,0)_32%),linear-gradient(145deg,#123524_0%,#16784f_58%,#84a83b_100%)] p-8 text-white lg:p-12">
-          <div className="text-xs uppercase tracking-[0.28em] text-lime-100/90">RVerse Payroll</div>
+          <div className="flex items-center gap-2">
+            <div className="text-xs uppercase tracking-[0.28em] text-lime-100/90">RVerse Payroll</div>
+            <span className="rounded-full border border-white/25 bg-white/12 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-lime-50">
+              V1.0
+            </span>
+          </div>
           <h1 className="mt-4 text-4xl font-semibold leading-tight">Simple payroll for your shop.</h1>
           <p className="mt-4 max-w-xl text-sm text-white/78">
             Track attendance, advances, and payouts in one clean workspace.
