@@ -10,6 +10,7 @@ export type TimelineEmployeeDetail = {
   employeeId: string;
   employeeName: string;
   employeeCode: string;
+  photoDataUrl: string | null;
   position: string | null;
   frequencyLabel: string;
   periodLabel: string;
@@ -36,6 +37,45 @@ export type TimelineEmployeeDetail = {
 
 function formatDateList(values: string[]) {
   return values.map((value) => formatDate(value)).join(", ");
+}
+
+function initials(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+}
+
+function PayrollAvatar({ detail, size = "sm" }: { detail: Pick<TimelineEmployeeDetail, "employeeName" | "photoDataUrl">; size?: "xs" | "sm" }) {
+  const sizeClass = size === "xs" ? "h-6 w-6 rounded-lg text-[10px]" : "h-9 w-9 rounded-xl text-xs";
+
+  return (
+    <span className={`inline-grid ${sizeClass} shrink-0 place-items-center overflow-hidden border border-white/80 bg-[linear-gradient(135deg,#e6f1ed_0%,#edf3fa_100%)] font-semibold text-[#678c84] shadow-sm`}>
+      {detail.photoDataUrl ? <img src={detail.photoDataUrl} alt="" className="h-full w-full object-cover" /> : initials(detail.employeeName)}
+    </span>
+  );
+}
+
+function PayrollAvatarStack({ details }: { details: TimelineEmployeeDetail[] }) {
+  const visibleDetails = details.slice(0, 4);
+  const remaining = details.length - visibleDetails.length;
+
+  return (
+    <span className="inline-flex items-center">
+      {visibleDetails.map((detail, index) => (
+        <span key={detail.employeeId} className={index ? "-ml-2" : ""} title={detail.employeeName}>
+          <PayrollAvatar detail={detail} size="xs" />
+        </span>
+      ))}
+      {remaining > 0 ? (
+        <span className="-ml-2 inline-grid h-6 min-w-6 place-items-center rounded-lg border border-white/80 bg-[rgba(230,241,237,0.96)] px-1 text-[10px] font-semibold text-[#5f8f85] shadow-sm">
+          +{remaining}
+        </span>
+      ) : null}
+    </span>
+  );
 }
 
 const attendanceDayStyle = {
@@ -146,13 +186,16 @@ function PayrollTimelineModal({
               className="rounded-[22px] border border-[rgba(148,190,139,0.36)] bg-[rgba(255,255,255,0.92)] px-3 py-4 sm:rounded-[24px] sm:px-4"
             >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">{detail.employeeCode}</div>
-                  <h3 className="mt-1 text-base font-semibold text-stone-950">{detail.employeeName}</h3>
-                  <p className="mt-1 text-sm text-[#7a7168]">{detail.position || "No position assigned"}</p>
-                  <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                    <span className="rounded-full bg-[rgba(229,245,224,0.92)] px-2.5 py-1 font-medium text-stone-700">{detail.frequencyLabel}</span>
-                    <span className="rounded-full bg-[rgba(229,245,224,0.92)] px-2.5 py-1 font-medium text-stone-700">{detail.periodLabel}</span>
+                <div className="flex min-w-0 gap-3">
+                  <PayrollAvatar detail={detail} />
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">{detail.employeeCode}</div>
+                    <h3 className="mt-1 truncate text-base font-semibold text-stone-950">{detail.employeeName}</h3>
+                    <p className="mt-1 truncate text-sm text-[#7a7168]">{detail.position || "No position assigned"}</p>
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                      <span className="rounded-full bg-[rgba(229,245,224,0.92)] px-2.5 py-1 font-medium text-stone-700">{detail.frequencyLabel}</span>
+                      <span className="rounded-full bg-[rgba(229,245,224,0.92)] px-2.5 py-1 font-medium text-stone-700">{detail.periodLabel}</span>
+                    </div>
                   </div>
                 </div>
                 <div className="w-full rounded-[18px] bg-[rgba(230,241,237,0.74)] px-3 py-2 text-left sm:w-auto sm:min-w-[172px] sm:text-right">
@@ -376,6 +419,7 @@ export function PayrollDueTimeline({ entries, todayValue, mode = "compact" }: { 
                                 <WalletCards className="h-3.5 w-3.5" />
                                 {entry.isPaid ? "Paid Payroll" : overdue ? "Overdue" : "Sahod Day"}
                               </span>
+                              <PayrollAvatarStack details={entry.details} />
                               <span className="truncate">
                                 {entry.employeeNames.join(", ")}
                               </span>

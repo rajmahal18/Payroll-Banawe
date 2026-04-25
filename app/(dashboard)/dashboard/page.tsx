@@ -400,6 +400,7 @@ export default async function DashboardPage({
             employeeId: string;
             employeeName: string;
             employeeCode: string;
+            photoDataUrl: string | null;
             position: string | null;
             frequencyLabel: string;
             periodLabel: string;
@@ -426,6 +427,7 @@ export default async function DashboardPage({
           employeeId: event.employee.id,
           employeeName: event.employee.fullName,
           employeeCode: event.employee.employeeCode,
+          photoDataUrl: event.employee.photoDataUrl,
           position: event.employee.position,
           frequencyLabel: describePayrollFrequency(event.employee),
           periodLabel: event.period.label,
@@ -465,6 +467,7 @@ export default async function DashboardPage({
           employeeId: string;
           employeeName: string;
           employeeCode: string;
+          photoDataUrl: string | null;
           position: string | null;
           frequencyLabel: string;
           periodLabel: string;
@@ -516,6 +519,7 @@ export default async function DashboardPage({
             employeeId: string;
             employeeName: string;
             employeeCode: string;
+            photoDataUrl: string | null;
             position: string | null;
             frequencyLabel: string;
             periodLabel: string;
@@ -572,6 +576,7 @@ export default async function DashboardPage({
             employeeId: entry.employee.id,
             employeeName: entry.employee.fullName,
             employeeCode: entry.employee.employeeCode,
+            photoDataUrl: entry.employee.photoDataUrl,
             position: entry.employee.position,
             frequencyLabel: describePayrollFrequency(entry.employee),
             periodLabel: period.label.replace(/^Payroll - /, ""),
@@ -612,6 +617,7 @@ export default async function DashboardPage({
           employeeId: string;
           employeeName: string;
           employeeCode: string;
+          photoDataUrl: string | null;
           position: string | null;
           frequencyLabel: string;
           periodLabel: string;
