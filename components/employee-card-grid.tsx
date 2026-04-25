@@ -39,6 +39,7 @@ type EmployeeCardItem = {
     date: string;
     label: string;
   }>;
+  remainingAdvanceBalance: string;
   payrollSnapshot: {
     lastPaidDate: string | null;
     lastPaidLabel: string | null;
@@ -270,8 +271,8 @@ function EmployeeViewModal({
 
   return createPortal(
     <div className="fixed inset-0 z-[130] flex items-end justify-center bg-[rgba(52,47,43,0.34)] p-3 sm:items-center sm:p-6">
-      <div className="w-full max-w-2xl rounded-[28px] border border-[rgba(88,150,88,0.36)] bg-[rgba(250,255,247,0.98)] shadow-[0_28px_60px_-30px_rgba(22,78,43,0.24)]">
-        <div className="flex items-start justify-between gap-4 border-b border-[rgba(226,219,211,0.82)] px-5 py-4">
+      <div className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-[26px] border border-[rgba(88,150,88,0.36)] bg-[rgba(250,255,247,0.98)] shadow-[0_28px_60px_-30px_rgba(22,78,43,0.24)] sm:max-h-[calc(100vh-3rem)] sm:rounded-[28px]">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-[rgba(226,219,211,0.82)] px-4 py-3 sm:px-5 sm:py-4">
           <div>
             <h2 className="text-lg font-semibold text-stone-950">Employee Details</h2>
             <p className="mt-1 text-sm text-[#7a7168]">{employee.fullName}</p>
@@ -286,14 +287,14 @@ function EmployeeViewModal({
           </button>
         </div>
 
-        <div className="px-5 py-5">
-          <div className="flex items-start gap-4 rounded-[24px] border border-[rgba(226,219,211,0.82)] bg-[linear-gradient(135deg,rgba(250,238,224,0.72)_0%,rgba(245,250,247,0.92)_56%,rgba(255,255,255,0.96)_100%)] p-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+          <div className="flex items-start gap-3 rounded-[22px] border border-[rgba(226,219,211,0.82)] bg-[linear-gradient(135deg,rgba(250,238,224,0.72)_0%,rgba(245,250,247,0.92)_56%,rgba(255,255,255,0.96)_100%)] p-3 sm:gap-4 sm:p-4">
             <EmployeeAvatar employee={employee} size="lg" />
             <div className="min-w-0">
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8a7f73]">{employee.employeeCode}</div>
-              <h3 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-stone-950">{employee.fullName}</h3>
+              <h3 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-stone-950 sm:text-xl">{employee.fullName}</h3>
               <p className="mt-1 text-sm text-[#7a7168]">{employee.position || "No position assigned yet"}</p>
-              <div className="mt-3">
+              <div className="mt-2 sm:mt-3">
                 <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${employee.status === "ACTIVE" ? "bg-[#e6f1ed] text-[#5f9f91]" : "bg-stone-100 text-stone-600"}`}>
                   {employee.status}
                 </span>
@@ -302,15 +303,20 @@ function EmployeeViewModal({
           </div>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-[22px] border border-[rgba(226,219,211,0.82)] bg-[rgba(255,255,255,0.72)] p-4">
+            <div className="rounded-[18px] border border-[rgba(226,219,211,0.82)] bg-[rgba(255,255,255,0.72)] p-3 sm:rounded-[22px] sm:p-4">
               <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">Daily Rate</div>
               <div className="mt-1 text-sm font-semibold text-stone-950">{formatMoneyLabel(employee.dailyRate)}</div>
             </div>
-            <div className="rounded-[22px] border border-[rgba(226,219,211,0.82)] bg-[rgba(255,255,255,0.72)] p-4">
+            <div className="rounded-[18px] border border-[rgba(226,219,211,0.82)] bg-[rgba(255,255,255,0.72)] p-3 sm:rounded-[22px] sm:p-4">
               <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">Employment Start</div>
               <div className="mt-1 text-sm font-semibold text-stone-950">{formatDateLabel(employee.startDate)}</div>
             </div>
-            <div className="rounded-[22px] border border-[rgba(226,219,211,0.82)] bg-[rgba(255,255,255,0.72)] p-4">
+            <div className="rounded-[18px] border border-[rgba(226,219,211,0.82)] bg-[rgba(255,255,255,0.72)] p-3 sm:rounded-[22px] sm:p-4">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">Remaining Advances</div>
+              <div className="mt-1 text-sm font-semibold text-stone-950">{formatMoneyLabel(employee.remainingAdvanceBalance)}</div>
+              <div className="mt-1 text-xs text-[#7a7168]">Open advance balance</div>
+            </div>
+            <div className="rounded-[18px] border border-[rgba(226,219,211,0.82)] bg-[rgba(255,255,255,0.72)] p-3 sm:rounded-[22px] sm:p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">Last Paid</div>
@@ -331,7 +337,7 @@ function EmployeeViewModal({
                 </button>
               </div>
             </div>
-            <div className="rounded-[22px] border border-[rgba(226,219,211,0.82)] bg-[rgba(255,255,255,0.72)] p-4">
+            <div className="rounded-[18px] border border-[rgba(226,219,211,0.82)] bg-[rgba(255,255,255,0.72)] p-3 sm:rounded-[22px] sm:p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">Upcoming Payroll</div>
@@ -348,15 +354,15 @@ function EmployeeViewModal({
                 </button>
               </div>
             </div>
-            <div className="rounded-[22px] border border-[rgba(226,219,211,0.82)] bg-[rgba(255,255,255,0.72)] p-4 sm:col-span-2">
+            <div className="rounded-[18px] border border-[rgba(226,219,211,0.82)] bg-[rgba(255,255,255,0.72)] p-3 sm:col-span-2 sm:rounded-[22px] sm:p-4">
               <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">Payroll Schedule</div>
               <div className="mt-1 text-sm font-semibold text-stone-950">{describeEmployeePayrollSchedule(employee)}</div>
             </div>
-            <div className="rounded-[22px] border border-[rgba(226,219,211,0.82)] bg-[rgba(255,255,255,0.72)] p-4 sm:col-span-2">
+            <div className="rounded-[18px] border border-[rgba(226,219,211,0.82)] bg-[rgba(255,255,255,0.72)] p-3 sm:col-span-2 sm:rounded-[22px] sm:p-4">
               <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">Contact Number</div>
               <div className="mt-1 text-sm font-semibold text-stone-950">{employee.contactNumber || "Not set"}</div>
             </div>
-            <div className="rounded-[22px] border border-[rgba(226,219,211,0.82)] bg-[rgba(255,255,255,0.72)] p-4 sm:col-span-2">
+            <div className="rounded-[18px] border border-[rgba(226,219,211,0.82)] bg-[rgba(255,255,255,0.72)] p-3 sm:col-span-2 sm:rounded-[22px] sm:p-4">
               <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">Notes</div>
               <div className="mt-1 text-sm text-stone-800">{employee.notes || "No notes recorded."}</div>
             </div>

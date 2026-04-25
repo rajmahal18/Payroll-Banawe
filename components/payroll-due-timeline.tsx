@@ -3,7 +3,12 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { CalendarClock, CheckCheck, ChevronRight, Coins, ReceiptText, UsersRound, WalletCards, X } from "lucide-react";
-import { markPayrollPaidForDateAction, setPayrollOtherDeductionAction } from "@/app/actions";
+import {
+  markPayrollPaidForDateAction,
+  setPayrollAdvanceDeductionAction,
+  setPayrollBonusAction,
+  setPayrollOtherDeductionAction
+} from "@/app/actions";
 import { formatDate, formatMoney, parseDateInputValue } from "@/lib/utils";
 
 export type TimelineEmployeeDetail = {
@@ -30,7 +35,10 @@ export type TimelineEmployeeDetail = {
   dailyRate: number;
   grossPay: number;
   bonusesAdded: number;
+  manualBonusAmount: number;
   advancesDeducted: number;
+  manualAdvanceDeductionAmount: number;
+  outstandingAdvanceBalance: number;
   payablesDeducted: number;
   manualOtherDeductionAmount: number;
   expectedAmount: number;
@@ -126,6 +134,7 @@ export function PayrollTimelineModal({
   allowMarkPaid?: boolean;
 }) {
   const [mounted, setMounted] = useState(false);
+  const [editingAdjustmentKey, setEditingAdjustmentKey] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -143,6 +152,14 @@ export function PayrollTimelineModal({
   }, [open]);
 
   if (!mounted || !open || !entry) return null;
+
+  const canEditAdjustment = (key: string, value: number) => value <= 0 || editingAdjustmentKey === key;
+  const handleAdjustmentClick = (event: React.MouseEvent<HTMLButtonElement>, key: string, value: number) => {
+    if (value > 0 && editingAdjustmentKey !== key) {
+      event.preventDefault();
+      setEditingAdjustmentKey(key);
+    }
+  };
 
   return createPortal(
     <div className="fixed inset-0 z-[130] flex items-end justify-center bg-[rgba(52,47,43,0.34)] p-3 sm:items-center sm:p-6">
@@ -188,7 +205,15 @@ export function PayrollTimelineModal({
         </div>
 
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4 sm:px-5">
-          {entry.details.map((detail) => (
+          {entry.details.map((detail) => {
+            const bonusEditKey = `${entry.payDateValue}-${detail.employeeId}-bonus`;
+            const advanceEditKey = `${entry.payDateValue}-${detail.employeeId}-advance`;
+            const deductionEditKey = `${entry.payDateValue}-${detail.employeeId}-deduction`;
+            const bonusEditable = canEditAdjustment(bonusEditKey, detail.manualBonusAmount);
+            const advanceEditable = detail.outstandingAdvanceBalance > 0 && canEditAdjustment(advanceEditKey, detail.manualAdvanceDeductionAmount);
+            const deductionEditable = canEditAdjustment(deductionEditKey, detail.manualOtherDeductionAmount);
+
+            return (
             <div
               key={detail.employeeId}
               className="rounded-[22px] border border-[rgba(148,190,139,0.36)] bg-[rgba(255,255,255,0.92)] px-3 py-4 sm:rounded-[24px] sm:px-4"
@@ -257,14 +282,82 @@ export function PayrollTimelineModal({
                         <div className="shrink-0 font-semibold text-stone-950">{formatMoney(detail.grossPay)}</div>
                       </div>
 
-                      <div className="flex items-center justify-between gap-4 rounded-[16px] bg-white/80 px-3 py-2">
-                        <div className="font-medium text-stone-950">Add bonuses</div>
-                        <div className="shrink-0 font-semibold text-[#0f6f67]">+ {formatMoney(detail.bonusesAdded)}</div>
+                      <div className="rounded-[16px] bg-white/80 px-3 py-2">
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <div className="font-medium text-stone-950">Add bonuses</div>
+                            {detail.manualBonusAmount > 0 ? <div className="text-xs text-[#7a7168]">Includes manual payroll bonus</div> : null}
+                          </div>
+                          <div className="shrink-0 font-semibold text-[#0f6f67]">+ {formatMoney(detail.bonusesAdded)}</div>
+                        </div>
+                        {!entry.isPaid ? (
+                          <form action={setPayrollBonusAction} className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                            <input type="hidden" name="employeeId" value={detail.employeeId} />
+                            <input type="hidden" name="payDate" value={entry.payDateValue} />
+                            {mode === "full" ? <input type="hidden" name="redirectTo" value="/payroll" /> : null}
+                            <input
+                              name="amount"
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              defaultValue={detail.manualBonusAmount || ""}
+                              placeholder="Manual amount"
+                              aria-label={`Manual bonus for ${detail.employeeName}`}
+                              readOnly={!bonusEditable}
+                              className="min-w-0 rounded-xl px-3 py-2 text-xs"
+                            />
+                            <button
+                              onClick={(event) => handleAdjustmentClick(event, bonusEditKey, detail.manualBonusAmount)}
+                              className="rounded-xl bg-[#0f6f67] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#0b5f59]"
+                            >
+                              {detail.manualBonusAmount > 0 && editingAdjustmentKey !== bonusEditKey ? "Edit" : "Save"}
+                            </button>
+                          </form>
+                        ) : null}
                       </div>
 
-                      <div className="flex items-center justify-between gap-4 rounded-[16px] bg-white/80 px-3 py-2">
-                        <div className="font-medium text-stone-950">Less advances</div>
-                        <div className="shrink-0 font-semibold text-[#8d5f14]">- {formatMoney(detail.advancesDeducted)}</div>
+                      <div className="rounded-[16px] bg-white/80 px-3 py-2">
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <div className="font-medium text-stone-950">
+                              Less advances
+                              <span className="ml-1 font-normal text-[#7a7168]">
+                                ({detail.outstandingAdvanceBalance > 0 ? `${formatMoney(detail.outstandingAdvanceBalance)} left` : "no outstanding balance"})
+                              </span>
+                            </div>
+                            {detail.manualAdvanceDeductionAmount > 0 ? (
+                              <div className="text-xs text-[#7a7168]">Includes manual payroll advance</div>
+                            ) : null}
+                          </div>
+                          <div className="shrink-0 font-semibold text-[#8d5f14]">- {formatMoney(detail.advancesDeducted)}</div>
+                        </div>
+                        {!entry.isPaid ? (
+                          <form action={setPayrollAdvanceDeductionAction} className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                            <input type="hidden" name="employeeId" value={detail.employeeId} />
+                            <input type="hidden" name="payDate" value={entry.payDateValue} />
+                            {mode === "full" ? <input type="hidden" name="redirectTo" value="/payroll" /> : null}
+                            <input
+                              name="amount"
+                              type="number"
+                              min="0"
+                              max={detail.outstandingAdvanceBalance > 0 ? detail.outstandingAdvanceBalance : undefined}
+                              step="0.01"
+                              defaultValue={detail.manualAdvanceDeductionAmount || ""}
+                              placeholder="Manual amount"
+                              aria-label={`Manual advance deduction for ${detail.employeeName}`}
+                              disabled={detail.outstandingAdvanceBalance <= 0}
+                              readOnly={!advanceEditable}
+                              className="min-w-0 rounded-xl px-3 py-2 text-xs"
+                            />
+                            <button
+                              onClick={(event) => handleAdjustmentClick(event, advanceEditKey, detail.manualAdvanceDeductionAmount)}
+                              disabled={detail.outstandingAdvanceBalance <= 0}
+                              className="rounded-xl bg-[#8d5f14] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#744d10] disabled:cursor-not-allowed disabled:opacity-45"
+                            >
+                              {detail.manualAdvanceDeductionAmount > 0 && editingAdjustmentKey !== advanceEditKey ? "Edit" : "Save"}
+                            </button>
+                          </form>
+                        ) : null}
                     </div>
 
                     <div className="rounded-[16px] bg-white/80 px-3 py-2">
@@ -290,10 +383,14 @@ export function PayrollTimelineModal({
                             defaultValue={detail.manualOtherDeductionAmount || ""}
                             placeholder="Manual amount"
                             aria-label={`Manual other deduction for ${detail.employeeName}`}
+                            readOnly={!deductionEditable}
                             className="min-w-0 rounded-xl px-3 py-2 text-xs"
                           />
-                          <button className="rounded-xl bg-[#8d5f14] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#744d10]">
-                            Save
+                          <button
+                            onClick={(event) => handleAdjustmentClick(event, deductionEditKey, detail.manualOtherDeductionAmount)}
+                            className="rounded-xl bg-[#8d5f14] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#744d10]"
+                          >
+                            {detail.manualOtherDeductionAmount > 0 && editingAdjustmentKey !== deductionEditKey ? "Edit" : "Save"}
                           </button>
                         </form>
                       ) : null}
@@ -309,7 +406,8 @@ export function PayrollTimelineModal({
                 </div>
               </div>
             </div>
-          ))}
+          );
+          })}
         </div>
       </div>
     </div>,

@@ -96,7 +96,8 @@ export async function getPayrollTimelineEntries({
             id: true,
             employeeId: true,
             date: true,
-            amount: true
+            amount: true,
+            reason: true
           },
           orderBy: [{ employeeId: "asc" }, { date: "asc" }]
         })
@@ -112,7 +113,8 @@ export async function getPayrollTimelineEntries({
             employeeId: true,
             date: true,
             remainingBalance: true,
-            deductionPerPayroll: true
+            deductionPerPayroll: true,
+            reason: true
           },
           orderBy: [{ employeeId: "asc" }, { date: "asc" }]
         })
@@ -241,7 +243,8 @@ export async function getPayrollTimelineEntries({
           id: advance.id,
           date: advance.date,
           remainingBalance: Number(advance.remainingBalance),
-          deductionPerPayroll: advance.deductionPerPayroll == null ? null : Number(advance.deductionPerPayroll)
+          deductionPerPayroll: advance.deductionPerPayroll == null ? null : Number(advance.deductionPerPayroll),
+          reason: advance.reason
         }))
     ])
   );
@@ -253,7 +256,8 @@ export async function getPayrollTimelineEntries({
         .map((bonus) => ({
           id: bonus.id,
           date: bonus.date,
-          amount: Number(bonus.amount)
+          amount: Number(bonus.amount),
+          reason: bonus.reason
         }))
     ])
   );
@@ -277,6 +281,7 @@ export async function getPayrollTimelineEntries({
   const payrollTimelineEntries = Array.from(
     nextPayrollEvents.reduce((groups, event) => {
       const employeeRecords = attendanceByEmployee.get(event.employee.id) ?? [];
+      const payDateKey = toDateInputValue(event.payDate);
       const liveMetrics = getLivePayrollAttendanceMetrics({
         employee: event.employee,
         periodStart: event.period.periodStart,
@@ -286,6 +291,9 @@ export async function getPayrollTimelineEntries({
       });
       let bonusAdded = 0;
       const employeeBonuses = simulatedBonusesByEmployee.get(event.employee.id) ?? [];
+      const manualBonusAmount = employeeBonuses
+        .filter((bonus) => bonus.reason === "Payroll modal manual bonus" && toDateInputValue(bonus.date) === payDateKey)
+        .reduce((total, bonus) => total + bonus.amount, 0);
       for (const bonus of employeeBonuses) {
         if (bonus.date > endOfDayLocal(event.period.periodEnd)) continue;
         bonusAdded += bonus.amount;
@@ -295,9 +303,14 @@ export async function getPayrollTimelineEntries({
       let runningNet = liveMetrics.grossPay + bonusAdded;
       let advancesDeducted = 0;
       let payablesDeducted = 0;
-      const payDateKey = toDateInputValue(event.payDate);
       const employeeAdvances = simulatedAdvancesByEmployee.get(event.employee.id) ?? [];
       const employeePayables = simulatedPayablesByEmployee.get(event.employee.id) ?? [];
+      const manualAdvanceDeductionAmount = employeeAdvances
+        .filter((advance) => advance.reason === "Payroll modal manual advance" && toDateInputValue(advance.date) === payDateKey)
+        .reduce((total, advance) => total + advance.remainingBalance, 0);
+      const outstandingAdvanceBalance = employeeAdvances
+        .filter((advance) => advance.reason !== "Payroll modal manual advance")
+        .reduce((total, advance) => total + advance.remainingBalance, 0);
       const manualOtherDeductionAmount = employeePayables
         .filter(
           (payable) =>
@@ -392,7 +405,10 @@ export async function getPayrollTimelineEntries({
         dailyRate: Number(event.employee.dailyRate),
         grossPay: liveMetrics.grossPay,
         bonusesAdded: bonusAdded,
+        manualBonusAmount,
         advancesDeducted,
+        manualAdvanceDeductionAmount,
+        outstandingAdvanceBalance,
         payablesDeducted,
         manualOtherDeductionAmount,
         expectedAmount
@@ -495,7 +511,10 @@ export async function getPayrollTimelineEntries({
           dailyRate: Number(entry.employee.dailyRate),
           grossPay: period.status === "PAID" ? Number(entry.grossPay) : liveMetrics.grossPay,
           bonusesAdded,
+          manualBonusAmount: 0,
           advancesDeducted,
+          manualAdvanceDeductionAmount: 0,
+          outstandingAdvanceBalance: 0,
           payablesDeducted,
           manualOtherDeductionAmount: 0,
           expectedAmount: displayedAmount

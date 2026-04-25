@@ -138,7 +138,8 @@ export default async function DashboardPage({
             id: true,
             employeeId: true,
             date: true,
-            amount: true
+            amount: true,
+            reason: true
           },
           orderBy: [{ employeeId: "asc" }, { date: "asc" }]
         })
@@ -154,7 +155,8 @@ export default async function DashboardPage({
             employeeId: true,
             date: true,
             remainingBalance: true,
-            deductionPerPayroll: true
+            deductionPerPayroll: true,
+            reason: true
           },
           orderBy: [{ employeeId: "asc" }, { date: "asc" }]
         })
@@ -285,7 +287,8 @@ export default async function DashboardPage({
           id: advance.id,
           date: advance.date,
           remainingBalance: Number(advance.remainingBalance),
-          deductionPerPayroll: advance.deductionPerPayroll == null ? null : Number(advance.deductionPerPayroll)
+          deductionPerPayroll: advance.deductionPerPayroll == null ? null : Number(advance.deductionPerPayroll),
+          reason: advance.reason
         }))
     ])
   );
@@ -297,7 +300,8 @@ export default async function DashboardPage({
         .map((bonus) => ({
           id: bonus.id,
           date: bonus.date,
-          amount: Number(bonus.amount)
+          amount: Number(bonus.amount),
+          reason: bonus.reason
         }))
     ])
   );
@@ -322,6 +326,7 @@ export default async function DashboardPage({
     nextPayrollEvents.reduce(
       (groups, event) => {
         const employeeRecords = attendanceByEmployee.get(event.employee.id) ?? [];
+        const payDateKey = toDateInputValue(event.payDate);
         const liveMetrics = getLivePayrollAttendanceMetrics({
           employee: event.employee,
           periodStart: event.period.periodStart,
@@ -331,6 +336,9 @@ export default async function DashboardPage({
         });
         let bonusAdded = 0;
         const employeeBonuses = simulatedBonusesByEmployee.get(event.employee.id) ?? [];
+        const manualBonusAmount = employeeBonuses
+          .filter((bonus) => bonus.reason === "Payroll modal manual bonus" && toDateInputValue(bonus.date) === payDateKey)
+          .reduce((total, bonus) => total + bonus.amount, 0);
         for (const bonus of employeeBonuses) {
           if (bonus.date > endOfDayLocal(event.period.periodEnd)) continue;
           bonusAdded += bonus.amount;
@@ -340,9 +348,14 @@ export default async function DashboardPage({
         let runningNet = liveMetrics.grossPay + bonusAdded;
         let advancesDeducted = 0;
         let payablesDeducted = 0;
-        const payDateKey = toDateInputValue(event.payDate);
         const employeeAdvances = simulatedAdvancesByEmployee.get(event.employee.id) ?? [];
         const employeePayables = simulatedPayablesByEmployee.get(event.employee.id) ?? [];
+        const manualAdvanceDeductionAmount = employeeAdvances
+          .filter((advance) => advance.reason === "Payroll modal manual advance" && toDateInputValue(advance.date) === payDateKey)
+          .reduce((total, advance) => total + advance.remainingBalance, 0);
+        const outstandingAdvanceBalance = employeeAdvances
+          .filter((advance) => advance.reason !== "Payroll modal manual advance")
+          .reduce((total, advance) => total + advance.remainingBalance, 0);
         const manualOtherDeductionAmount = employeePayables
           .filter(
             (payable) =>
@@ -427,7 +440,10 @@ export default async function DashboardPage({
             dailyRate: number;
             grossPay: number;
             bonusesAdded: number;
+            manualBonusAmount: number;
             advancesDeducted: number;
+            manualAdvanceDeductionAmount: number;
+            outstandingAdvanceBalance: number;
             payablesDeducted: number;
             manualOtherDeductionAmount: number;
             expectedAmount: number;
@@ -460,7 +476,10 @@ export default async function DashboardPage({
           dailyRate: Number(event.employee.dailyRate),
           grossPay: liveMetrics.grossPay,
           bonusesAdded: bonusAdded,
+          manualBonusAmount,
           advancesDeducted,
+          manualAdvanceDeductionAmount,
+          outstandingAdvanceBalance,
           payablesDeducted,
           manualOtherDeductionAmount,
           expectedAmount
@@ -496,7 +515,10 @@ export default async function DashboardPage({
           dailyRate: number;
           grossPay: number;
           bonusesAdded: number;
+          manualBonusAmount: number;
           advancesDeducted: number;
+          manualAdvanceDeductionAmount: number;
+          outstandingAdvanceBalance: number;
           payablesDeducted: number;
           manualOtherDeductionAmount: number;
           expectedAmount: number;
@@ -549,7 +571,10 @@ export default async function DashboardPage({
             dailyRate: number;
             grossPay: number;
             bonusesAdded: number;
+            manualBonusAmount: number;
             advancesDeducted: number;
+            manualAdvanceDeductionAmount: number;
+            outstandingAdvanceBalance: number;
             payablesDeducted: number;
             manualOtherDeductionAmount: number;
             expectedAmount: number;
@@ -612,7 +637,10 @@ export default async function DashboardPage({
             dailyRate: Number(entry.employee.dailyRate),
             grossPay: Number(entry.grossPay),
             bonusesAdded: "totalBonusesAdded" in entry ? Number(entry.totalBonusesAdded ?? 0) : 0,
+            manualBonusAmount: 0,
             advancesDeducted: Number(entry.totalAdvancesDeducted),
+            manualAdvanceDeductionAmount: 0,
+            outstandingAdvanceBalance: 0,
             payablesDeducted: Number(entry.totalPayablesDeducted),
             manualOtherDeductionAmount: 0,
             expectedAmount: Number(entry.netPay)
@@ -649,7 +677,10 @@ export default async function DashboardPage({
           dailyRate: number;
           grossPay: number;
           bonusesAdded: number;
+          manualBonusAmount: number;
           advancesDeducted: number;
+          manualAdvanceDeductionAmount: number;
+          outstandingAdvanceBalance: number;
           payablesDeducted: number;
           manualOtherDeductionAmount: number;
           expectedAmount: number;

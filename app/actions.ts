@@ -19,6 +19,8 @@ const employeePhotoSchema = z
   .max(220_000)
   .regex(/^data:image\/(?:jpeg|jpg|png|webp);base64,[a-zA-Z0-9+/=]+$/)
   .optional();
+const PAYROLL_MANUAL_BONUS_REASON = "Payroll modal manual bonus";
+const PAYROLL_MANUAL_ADVANCE_REASON = "Payroll modal manual advance";
 const PAYROLL_MANUAL_DEDUCTION_REMARK = "Payroll modal manual deduction";
 
 async function withActionTimeout<T>(promise: Promise<T>, timeoutMs = ACTION_TIMEOUT_MS) {
@@ -1090,6 +1092,141 @@ export async function createPayableAction(formData: FormData) {
   redirect("/payables");
 }
 
+function getPayrollAdjustmentRedirect(redirectTo: string | undefined, payDate: string) {
+  return redirectTo === "/payroll" ? "/payroll" : `/dashboard?date=${payDate}`;
+}
+
+export async function setPayrollBonusAction(formData: FormData) {
+  const user = await requireUser();
+  const schema = z.object({
+    employeeId: z.string().min(1),
+    payDate: z.string().min(1),
+    amount: z.union([z.literal(""), z.coerce.number().min(0)]),
+    redirectTo: z.string().optional()
+  });
+
+  const parsed = schema.parse({
+    employeeId: formData.get("employeeId"),
+    payDate: formData.get("payDate"),
+    amount: formData.get("amount"),
+    redirectTo: optionalFormString(formData.get("redirectTo"))
+  });
+  const employee = await requireShopEmployee(user.shop.id, parsed.employeeId);
+  const payDate = parseDateInputValue(parsed.payDate);
+  const amount = parsed.amount === "" ? new Prisma.Decimal(0) : new Prisma.Decimal(parsed.amount);
+  const existing = await prisma.bonus.findFirst({
+    where: {
+      employeeId: employee.id,
+      date: payDate,
+      status: LedgerStatus.OPEN,
+      reason: PAYROLL_MANUAL_BONUS_REASON
+    }
+  });
+
+  if (amount.equals(0)) {
+    if (existing) {
+      await prisma.bonus.delete({ where: { id: existing.id } });
+    }
+  } else if (existing) {
+    await prisma.bonus.update({
+      where: { id: existing.id },
+      data: { amount }
+    });
+  } else {
+    await prisma.bonus.create({
+      data: {
+        employeeId: employee.id,
+        date: payDate,
+        amount,
+        reason: PAYROLL_MANUAL_BONUS_REASON,
+        status: LedgerStatus.OPEN
+      }
+    });
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/payroll");
+  revalidatePath("/advances");
+  revalidatePath("/bonuses");
+  redirect(getPayrollAdjustmentRedirect(parsed.redirectTo, parsed.payDate));
+}
+
+export async function setPayrollAdvanceDeductionAction(formData: FormData) {
+  const user = await requireUser();
+  const schema = z.object({
+    employeeId: z.string().min(1),
+    payDate: z.string().min(1),
+    amount: z.union([z.literal(""), z.coerce.number().min(0)]),
+    redirectTo: z.string().optional()
+  });
+
+  const parsed = schema.parse({
+    employeeId: formData.get("employeeId"),
+    payDate: formData.get("payDate"),
+    amount: formData.get("amount"),
+    redirectTo: optionalFormString(formData.get("redirectTo"))
+  });
+  const employee = await requireShopEmployee(user.shop.id, parsed.employeeId);
+  const payDate = parseDateInputValue(parsed.payDate);
+  const amount = parsed.amount === "" ? new Prisma.Decimal(0) : new Prisma.Decimal(parsed.amount);
+  const existing = await prisma.advance.findFirst({
+    where: {
+      employeeId: employee.id,
+      date: payDate,
+      status: LedgerStatus.OPEN,
+      reason: PAYROLL_MANUAL_ADVANCE_REASON
+    }
+  });
+
+  if (amount.equals(0)) {
+    if (existing) {
+      if (existing.deductedAmount.equals(0)) {
+        await prisma.advance.delete({ where: { id: existing.id } });
+      } else {
+        await prisma.advance.update({
+          where: { id: existing.id },
+          data: {
+            remainingBalance: new Prisma.Decimal(0),
+            deductionPerPayroll: null,
+            status: LedgerStatus.CANCELLED
+          }
+        });
+      }
+    }
+  } else if (existing) {
+    const deductedAmount = existing.deductedAmount.greaterThan(amount) ? amount : existing.deductedAmount;
+    const remainingBalance = amount.minus(deductedAmount);
+    await prisma.advance.update({
+      where: { id: existing.id },
+      data: {
+        amount,
+        deductionPerPayroll: amount,
+        deductedAmount,
+        remainingBalance,
+        status: remainingBalance.equals(0) ? LedgerStatus.CLOSED : LedgerStatus.OPEN
+      }
+    });
+  } else {
+    await prisma.advance.create({
+      data: {
+        employeeId: employee.id,
+        date: payDate,
+        amount,
+        deductionPerPayroll: amount,
+        deductedAmount: new Prisma.Decimal(0),
+        remainingBalance: amount,
+        reason: PAYROLL_MANUAL_ADVANCE_REASON,
+        status: LedgerStatus.OPEN
+      }
+    });
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/payroll");
+  revalidatePath("/advances");
+  redirect(getPayrollAdjustmentRedirect(parsed.redirectTo, parsed.payDate));
+}
+
 export async function setPayrollOtherDeductionAction(formData: FormData) {
   const user = await requireUser();
   const schema = z.object({
@@ -1160,7 +1297,7 @@ export async function setPayrollOtherDeductionAction(formData: FormData) {
 
   revalidatePath("/dashboard");
   revalidatePath("/payroll");
-  redirect(parsed.redirectTo === "/payroll" ? "/payroll" : `/dashboard?date=${parsed.payDate}`);
+  redirect(getPayrollAdjustmentRedirect(parsed.redirectTo, parsed.payDate));
 }
 
 export async function savePayrollSettingsAction(formData: FormData) {

@@ -106,6 +106,12 @@ export default async function EmployeesPage({
             remarks: true
           }
         },
+        advances: {
+          where: { status: "OPEN" },
+          select: {
+            remainingBalance: true
+          }
+        },
         payrollEntries: {
           select: {
             daysPresent: true,
@@ -315,7 +321,10 @@ export default async function EmployeesPage({
                 paidDayUnits,
                 grossPay,
                 bonusesAdded,
+                manualBonusAmount = 0,
                 advancesDeducted,
+                manualAdvanceDeductionAmount = 0,
+                outstandingAdvanceBalance = 0,
                 payablesDeducted,
                 expectedAmount
               }: {
@@ -328,7 +337,10 @@ export default async function EmployeesPage({
                 paidDayUnits: number;
                 grossPay: number;
                 bonusesAdded: number;
+                manualBonusAmount?: number;
                 advancesDeducted: number;
+                manualAdvanceDeductionAmount?: number;
+                outstandingAdvanceBalance?: number;
                 payablesDeducted: number;
                 expectedAmount: number;
               }): TimelineEmployeeDetail => {
@@ -360,7 +372,10 @@ export default async function EmployeesPage({
                   dailyRate: Number(employee.dailyRate),
                   grossPay,
                   bonusesAdded,
+                  manualBonusAmount,
                   advancesDeducted,
+                  manualAdvanceDeductionAmount,
+                  outstandingAdvanceBalance,
                   payablesDeducted,
                   manualOtherDeductionAmount: 0,
                   expectedAmount
@@ -413,6 +428,7 @@ export default async function EmployeesPage({
                     grossPay: upcomingMetrics.grossPay,
                     bonusesAdded: 0,
                     advancesDeducted: 0,
+                    outstandingAdvanceBalance: employee.advances.reduce((total, advance) => total + Number(advance.remainingBalance), 0),
                     payablesDeducted: 0,
                     expectedAmount: upcomingMetrics.grossPay
                   })
@@ -448,6 +464,9 @@ export default async function EmployeesPage({
                   date: entry.payrollPeriod.payDate.toISOString(),
                   label: entry.payrollPeriod.label
                 })),
+                remainingAdvanceBalance: employee.advances
+                  .reduce((total, advance) => total + Number(advance.remainingBalance), 0)
+                  .toString(),
                 payrollSnapshot: {
                   lastPaidDate: lastPaidEntry ? lastPaidEntry.payrollPeriod.payDate.toISOString() : employee.lastPaidDate?.toISOString() ?? null,
                   lastPaidLabel: lastPaidEntry ? lastPaidEntry.payrollPeriod.label.replace(/^Payroll - /, "") : null,
