@@ -1,7 +1,7 @@
 import { AttendanceChecklist } from "@/components/attendance-checklist";
 import { DashboardStatsStrip } from "@/components/dashboard-stats-strip";
 import { EmployeeCreateModal } from "@/components/employee-create-modal";
-import { PayrollDueTimeline } from "@/components/payroll-due-timeline";
+import { PayrollDueTimeline, type TimelineEntry, type TimelineEmployeeDetail } from "@/components/payroll-due-timeline";
 import { requireUser } from "@/lib/auth";
 import {
   getAdvanceDeductionForPreview,
@@ -9,9 +9,8 @@ import {
   getLivePayrollAttendanceMetrics
 } from "@/lib/payroll-live";
 import { describePayrollFrequency, getPayDateForDate, getPeriodForPayDate, getTimelineRetentionDays } from "@/lib/payroll";
-import { getPayrollTimelineEntries } from "@/lib/payroll-timeline";
 import { prisma } from "@/lib/prisma";
-import { getShopWorkCalendar, isWorkDate } from "@/lib/work-schedule";
+import { getShopWorkCalendar, isWorkDate, type WorkCalendar } from "@/lib/work-schedule";
 import {
   addBusinessDays,
   differenceInBusinessDays,
@@ -24,6 +23,56 @@ import {
   startOfDayLocal,
   toDateInputValue
 } from "@/lib/utils";
+
+type AttendanceRecordLike = {
+  date: Date;
+  status: "PRESENT" | "HALF_DAY" | "ABSENT";
+};
+
+function addCalendarDays(date: Date, amount: number) {
+  return parseDateInputValue(toDateInputValue(new Date(date.getTime() + amount * 24 * 60 * 60 * 1000)));
+}
+
+function buildAttendanceCalendarDays({
+  periodStart,
+  periodEnd,
+  attendanceRecords,
+  workCalendar
+}: {
+  periodStart: Date;
+  periodEnd: Date;
+  attendanceRecords: AttendanceRecordLike[];
+  workCalendar: WorkCalendar;
+}): TimelineEmployeeDetail["attendanceCalendarDays"] {
+  const recordsByDate = new Map(attendanceRecords.map((record) => [toDateInputValue(record.date), record]));
+  const days: TimelineEmployeeDetail["attendanceCalendarDays"] = [];
+  let cursor = parseDateInputValue(toDateInputValue(periodStart));
+  const endValue = toDateInputValue(periodEnd);
+
+  while (toDateInputValue(cursor) <= endValue) {
+    const dateValue = toDateInputValue(cursor);
+    const record = recordsByDate.get(dateValue);
+    const workDay = isWorkDate(cursor, workCalendar);
+    const status = !workDay
+      ? "NO_WORK"
+      : record?.status === "ABSENT"
+        ? "ABSENT"
+        : record?.status === "HALF_DAY"
+          ? "HALF_DAY"
+          : "PRESENT";
+
+    days.push({
+      dateValue,
+      dayLabel: formatShortWeekday(cursor),
+      dateLabel: String(Number(dateValue.slice(-2))),
+      status
+    });
+
+    cursor = addCalendarDays(cursor, 1);
+  }
+
+  return days;
+}
 
 export default async function DashboardPage({
   searchParams
@@ -134,8 +183,8 @@ export default async function DashboardPage({
   const nextPayrollEvents = employees
     .map((employee) => {
       const baseDate = employee.startDate && startOfDayLocal(employee.startDate) > todayStart ? startOfDayLocal(employee.startDate) : todayStart;
-      const payDate = getPayDateForDate(baseDate, employee);
-      const period = getPeriodForPayDate(payDate, employee);
+      const payDate = getPayDateForDate(baseDate, employee, workCalendar);
+      const period = getPeriodForPayDate(payDate, employee, workCalendar);
 
       return {
         employee,
@@ -181,7 +230,7 @@ export default async function DashboardPage({
     }
 
     const maxRetentionDays = period.payrollEntries.reduce((maxDays, entry) => {
-      return Math.max(maxDays, getTimelineRetentionDays(entry.employee, period.payDate));
+      return Math.max(maxDays, getTimelineRetentionDays(entry.employee, period.payDate, workCalendar));
     }, 0);
 
     return addBusinessDays(startOfDayLocal(period.payDate), maxRetentionDays) >= todayStart;
@@ -273,7 +322,8 @@ export default async function DashboardPage({
           employee: event.employee,
           periodStart: event.period.periodStart,
           periodEnd: event.period.periodEnd,
-          attendanceRecords: employeeRecords
+          attendanceRecords: employeeRecords,
+          calendar: workCalendar
         });
         let bonusAdded = 0;
         const employeeBonuses = simulatedBonusesByEmployee.get(event.employee.id) ?? [];
@@ -353,6 +403,8 @@ export default async function DashboardPage({
             position: string | null;
             frequencyLabel: string;
             periodLabel: string;
+            calendarMode: "weekday" | "date";
+            attendanceCalendarDays: TimelineEmployeeDetail["attendanceCalendarDays"];
             absentDates: string[];
             halfDayDates: string[];
             daysAbsent: number;
@@ -377,6 +429,13 @@ export default async function DashboardPage({
           position: event.employee.position,
           frequencyLabel: describePayrollFrequency(event.employee),
           periodLabel: event.period.label,
+          calendarMode: event.employee.payrollFrequency === "WEEKLY" ? "weekday" : "date",
+          attendanceCalendarDays: buildAttendanceCalendarDays({
+            periodStart: event.period.periodStart,
+            periodEnd: event.period.periodEnd,
+            attendanceRecords: attendanceByEmployee.get(event.employee.id) ?? [],
+            workCalendar
+          }),
           absentDates: liveMetrics.absentDates.map((date) => toDateInputValue(date)),
           halfDayDates: liveMetrics.halfDayDates.map((date) => toDateInputValue(date)),
           daysAbsent: liveMetrics.daysAbsent,
@@ -409,6 +468,8 @@ export default async function DashboardPage({
           position: string | null;
           frequencyLabel: string;
           periodLabel: string;
+          calendarMode: "weekday" | "date";
+          attendanceCalendarDays: TimelineEmployeeDetail["attendanceCalendarDays"];
           absentDates: string[];
           halfDayDates: string[];
           daysAbsent: number;
@@ -458,6 +519,8 @@ export default async function DashboardPage({
             position: string | null;
             frequencyLabel: string;
             periodLabel: string;
+            calendarMode: "weekday" | "date";
+            attendanceCalendarDays: TimelineEmployeeDetail["attendanceCalendarDays"];
             absentDates: string[];
             halfDayDates: string[];
             daysAbsent: number;
@@ -488,7 +551,8 @@ export default async function DashboardPage({
             employee: entry.employee,
             periodStart: period.periodStart,
             periodEnd: period.periodEnd,
-            attendanceRecords: attendanceByEmployee.get(entry.employee.id) ?? []
+            attendanceRecords: attendanceByEmployee.get(entry.employee.id) ?? [],
+            calendar: workCalendar
           });
 
           existing.expectedTotal += Number(entry.netPay);
@@ -502,6 +566,13 @@ export default async function DashboardPage({
             position: entry.employee.position,
             frequencyLabel: describePayrollFrequency(entry.employee),
             periodLabel: period.label.replace(/^Payroll - /, ""),
+            calendarMode: entry.employee.payrollFrequency === "WEEKLY" ? "weekday" : "date",
+            attendanceCalendarDays: buildAttendanceCalendarDays({
+              periodStart: period.periodStart,
+              periodEnd: period.periodEnd,
+              attendanceRecords: attendanceByEmployee.get(entry.employee.id) ?? [],
+              workCalendar
+            }),
             absentDates: liveMetrics.absentDates.map((date) => toDateInputValue(date)),
             halfDayDates: liveMetrics.halfDayDates.map((date) => toDateInputValue(date)),
             daysAbsent: entry.daysAbsent,
@@ -535,6 +606,8 @@ export default async function DashboardPage({
           position: string | null;
           frequencyLabel: string;
           periodLabel: string;
+          calendarMode: "weekday" | "date";
+          attendanceCalendarDays: TimelineEmployeeDetail["attendanceCalendarDays"];
           absentDates: string[];
           halfDayDates: string[];
           daysAbsent: number;
@@ -552,7 +625,7 @@ export default async function DashboardPage({
     ).values()
   );
   const actualPayDates = new Set(actualTimelineEntries.map((entry) => entry.payDateValue));
-  const mergedTimelineEntries = [...actualTimelineEntries, ...payrollTimelineEntries.filter((entry) => !actualPayDates.has(entry.payDateValue))]
+  const mergedTimelineEntries: TimelineEntry[] = [...actualTimelineEntries, ...payrollTimelineEntries.filter((entry) => !actualPayDates.has(entry.payDateValue))]
     .sort((a, b) => {
       if (a.isPaid !== b.isPaid) {
         return a.isPaid ? -1 : 1;
@@ -560,7 +633,6 @@ export default async function DashboardPage({
       return parseDateInputValue(a.payDateValue).getTime() - parseDateInputValue(b.payDateValue).getTime();
     })
     .slice(0, 8);
-  const sharedTimelineEntries = await getPayrollTimelineEntries({ shopId: user.shop.id, limit: 8 });
   const dateSnapshots = Array.from({ length: 7 }, (_, index) => {
     const date = addBusinessDays(selectedDate, index - 3);
     const snapshotDateValue = toDateInputValue(date);
@@ -690,7 +762,7 @@ export default async function DashboardPage({
       </div>
 
       <div className="mt-4">
-        <PayrollDueTimeline entries={sharedTimelineEntries} todayValue={toDateInputValue(todayStart)} />
+        <PayrollDueTimeline entries={mergedTimelineEntries} todayValue={toDateInputValue(todayStart)} />
       </div>
     </div>
   );

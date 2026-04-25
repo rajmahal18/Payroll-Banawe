@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 
 const SESSION_COOKIE = "absensya_session";
+const AUTH_LOOKUP_TIMEOUT_MS = 5000;
+const AUTH_WRITE_TIMEOUT_MS = 8000;
 
 export type SessionUser = {
   id: string;
@@ -15,6 +17,19 @@ export type SessionUser = {
     name: string;
   };
 };
+
+export async function withTimeout<T>(promise: Promise<T>, timeoutMs = AUTH_LOOKUP_TIMEOUT_MS) {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<null>((resolve) => {
+    timeout = setTimeout(() => resolve(null), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
 
 function getSecret() {
   const secret = process.env.SESSION_SECRET;
@@ -48,22 +63,27 @@ function verifyToken(token: string) {
 }
 
 export async function login(email: string, password: string) {
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) return false;
+  try {
+    const user = await withTimeout(prisma.user.findUnique({ where: { email } }), AUTH_WRITE_TIMEOUT_MS);
+    if (!user) return false;
 
-  const ok = await bcrypt.compare(password, user.passwordHash);
-  if (!ok) return false;
+    const ok = await withTimeout(bcrypt.compare(password, user.passwordHash), AUTH_WRITE_TIMEOUT_MS);
+    if (!ok) return false;
 
-  const store = await cookies();
-  store.set(SESSION_COOKIE, createToken(user.id), {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 7
-  });
+    const store = await cookies();
+    store.set(SESSION_COOKIE, createToken(user.id), {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7
+    });
 
-  return true;
+    return true;
+  } catch (error) {
+    console.error("Unable to complete login", error);
+    return false;
+  }
 }
 
 export async function register({
@@ -77,33 +97,43 @@ export async function register({
   email: string;
   password: string;
 }) {
-  const passwordHash = await bcrypt.hash(password, 10);
+  const passwordHash = await withTimeout(bcrypt.hash(password, 10), AUTH_WRITE_TIMEOUT_MS);
+  if (!passwordHash) {
+    throw new Error("Unable to hash password before timeout.");
+  }
 
-  const user = await prisma.$transaction(async (tx) => {
-    const createdShop = await tx.shop.create({
-      data: {
-        name: shopName
-      }
-    });
+  const user = await withTimeout(
+    prisma.$transaction(async (tx) => {
+      const createdShop = await tx.shop.create({
+        data: {
+          name: shopName
+        }
+      });
 
-    await tx.payrollSettings.create({
-      data: {
-        shopId: createdShop.id,
-        frequency: "WEEKLY",
-        weeklyPayDay: 5,
-        autoGenerate: true
-      }
-    });
+      await tx.payrollSettings.create({
+        data: {
+          shopId: createdShop.id,
+          frequency: "WEEKLY",
+          weeklyPayDay: 5,
+          autoGenerate: true
+        }
+      });
 
-    return tx.user.create({
-      data: {
-        email,
-        passwordHash,
-        name: ownerName,
-        shopId: createdShop.id
-      }
-    });
-  });
+      return tx.user.create({
+        data: {
+          email,
+          passwordHash,
+          name: ownerName,
+          shopId: createdShop.id
+        }
+      });
+    }),
+    AUTH_WRITE_TIMEOUT_MS
+  );
+
+  if (!user) {
+    throw new Error("Registration timed out while contacting the database.");
+  }
 
   const store = await cookies();
   store.set(SESSION_COOKIE, createToken(user.id), {
@@ -130,20 +160,27 @@ export async function getCurrentUser() {
   const payload = verifyToken(token);
   if (!payload) return null;
 
-  return prisma.user.findUnique({
-    where: { id: payload.userId },
-    select: {
-      id: true,
-      email: true,
-      name: true,
-      shop: {
+  try {
+    return await withTimeout(
+      prisma.user.findUnique({
+        where: { id: payload.userId },
         select: {
           id: true,
-          name: true
+          email: true,
+          name: true,
+          shop: {
+            select: {
+              id: true,
+              name: true
+            }
+          }
         }
-      }
-    }
-  });
+      })
+    );
+  } catch (error) {
+    console.error("Unable to load current user session", error);
+    return null;
+  }
 }
 
 export async function requireUser() {

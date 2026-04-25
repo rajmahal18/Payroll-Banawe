@@ -9,6 +9,8 @@ import {
 } from "@/lib/utils";
 import { addWorkDays, differenceInWorkDays, nextWorkDate, type WorkCalendar } from "@/lib/work-schedule";
 
+const MAX_SCHEDULE_SCAN_STEPS = 3700;
+
 const shortDateFormatter = new Intl.DateTimeFormat("en-PH", {
   timeZone: BUSINESS_TIME_ZONE,
   month: "short",
@@ -129,7 +131,7 @@ export function getPayDateForDate(date: Date, schedule: PayrollScheduleLike, cal
     case PayrollFrequency.WEEKLY: {
       const targetDay = schedule.weeklyPayDay ?? 5;
       let cursor = referenceDate;
-      while (true) {
+      for (let scanned = 0; scanned <= MAX_SCHEDULE_SCAN_STEPS; scanned += 1) {
         while (cursor.getUTCDay() !== targetDay) {
           cursor = shiftCalendarDays(cursor, 1);
         }
@@ -139,29 +141,32 @@ export function getPayDateForDate(date: Date, schedule: PayrollScheduleLike, cal
         }
         cursor = shiftCalendarDays(cursor, 1);
       }
+      return nextWorkDate(referenceDate, calendar);
     }
     case PayrollFrequency.MONTHLY: {
       const targetDay = schedule.monthlyPayDay ?? 15;
       let monthCursor = startOfMonthBusiness(referenceDate);
-      while (true) {
+      for (let scanned = 0; scanned <= MAX_SCHEDULE_SCAN_STEPS; scanned += 1) {
         const payDate = nextWorkDate(safeDateInMonth(monthCursor, targetDay), calendar);
         if (isAfterAnchor(payDate, anchor, strictAfterAnchor)) {
           return payDate;
         }
         monthCursor = shiftMonthStart(monthCursor, 1);
       }
+      return nextWorkDate(referenceDate, calendar);
     }
     case PayrollFrequency.TWICE_MONTHLY: {
       const first = Math.min(schedule.twiceMonthlyDayOne ?? 15, schedule.twiceMonthlyDayTwo ?? 30);
       const second = Math.max(schedule.twiceMonthlyDayOne ?? 15, schedule.twiceMonthlyDayTwo ?? 30);
       let monthCursor = startOfMonthBusiness(referenceDate);
-      while (true) {
+      for (let scanned = 0; scanned <= MAX_SCHEDULE_SCAN_STEPS; scanned += 1) {
         const firstDate = nextWorkDate(safeDateInMonth(monthCursor, first), calendar);
         if (isAfterAnchor(firstDate, anchor, strictAfterAnchor)) return firstDate;
         const secondDate = nextWorkDate(safeDateInMonth(monthCursor, second), calendar);
         if (isAfterAnchor(secondDate, anchor, strictAfterAnchor)) return secondDate;
         monthCursor = shiftMonthStart(monthCursor, 1);
       }
+      return nextWorkDate(referenceDate, calendar);
     }
     case PayrollFrequency.EVERY_N_DAYS: {
       const interval = Math.max(schedule.everyNDays ?? 7, 2);
@@ -189,7 +194,10 @@ export function getPeriodForPayDate(payDate: Date, schedule: PayrollScheduleLike
       const targetDay = schedule.weeklyPayDay ?? 5;
       let scheduledPayDate = parseDateInputValue(toDateInputValue(payDate));
 
-      while (scheduledPayDate.getUTCDay() !== targetDay || toDateInputValue(nextWorkDate(scheduledPayDate, calendar)) !== toDateInputValue(payDate)) {
+      for (let scanned = 0; scanned <= MAX_SCHEDULE_SCAN_STEPS; scanned += 1) {
+        const matchesTargetDay = scheduledPayDate.getUTCDay() === targetDay;
+        const resolvesToPayDate = toDateInputValue(nextWorkDate(scheduledPayDate, calendar)) === toDateInputValue(payDate);
+        if (matchesTargetDay && resolvesToPayDate) break;
         scheduledPayDate = shiftCalendarDays(scheduledPayDate, -1);
       }
 

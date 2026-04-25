@@ -7,6 +7,8 @@ export type WorkCalendar = {
 };
 
 const DEFAULT_WORK_DAYS = [1, 2, 3, 4, 5, 6];
+const MAX_CALENDAR_SCAN_DAYS = 370;
+const MAX_RANGE_DAYS = 3700;
 
 export function parseWorkDays(value?: string | null) {
   const parsed = String(value || "")
@@ -21,6 +23,18 @@ export function serializeWorkDays(values: number[]) {
   return Array.from(new Set(values.filter((value) => Number.isInteger(value) && value >= 0 && value <= 6)))
     .sort((a, b) => a - b)
     .join(",");
+}
+
+function normalizeCalendar(calendar?: WorkCalendar): WorkCalendar | undefined {
+  if (!calendar) return undefined;
+  return {
+    workWeekdays: calendar.workWeekdays.size ? calendar.workWeekdays : new Set(DEFAULT_WORK_DAYS),
+    noWorkDates: calendar.noWorkDates ?? new Set<string>()
+  };
+}
+
+function shiftDate(date: Date, direction: 1 | -1) {
+  return parseDateInputValue(toDateInputValue(new Date(date.getTime() + direction * 24 * 60 * 60 * 1000)));
 }
 
 export async function getShopWorkCalendar(shopId: string): Promise<WorkCalendar> {
@@ -38,33 +52,39 @@ export async function getShopWorkCalendar(shopId: string): Promise<WorkCalendar>
 }
 
 export function isWorkDate(date: Date, calendar?: WorkCalendar) {
-  if (!calendar) return true;
+  const usableCalendar = normalizeCalendar(calendar);
+  if (!usableCalendar) return true;
   const dateValue = toDateInputValue(date);
   const businessDate = parseDateInputValue(dateValue);
-  return calendar.workWeekdays.has(businessDate.getUTCDay()) && !calendar.noWorkDates.has(dateValue);
+  return usableCalendar.workWeekdays.has(businessDate.getUTCDay()) && !usableCalendar.noWorkDates.has(dateValue);
 }
 
 export function nextWorkDate(date: Date, calendar?: WorkCalendar) {
+  const usableCalendar = normalizeCalendar(calendar);
   let cursor = parseDateInputValue(toDateInputValue(date));
-  while (!isWorkDate(cursor, calendar)) {
-    cursor = addWorkDays(cursor, 1);
+
+  for (let scanned = 0; scanned <= MAX_CALENDAR_SCAN_DAYS; scanned += 1) {
+    if (isWorkDate(cursor, usableCalendar)) return cursor;
+    cursor = shiftDate(cursor, 1);
   }
-  return cursor;
+
+  return parseDateInputValue(toDateInputValue(date));
 }
 
 export function addWorkDays(date: Date, amount: number, calendar?: WorkCalendar) {
-  if (!calendar) {
+  const usableCalendar = normalizeCalendar(calendar);
+  if (!usableCalendar) {
     const shifted = new Date(date.getTime() + amount * 24 * 60 * 60 * 1000);
     return parseDateInputValue(toDateInputValue(shifted));
   }
 
-  const direction = amount >= 0 ? 1 : -1;
+  const direction: 1 | -1 = amount >= 0 ? 1 : -1;
   let remaining = Math.abs(amount);
   let cursor = parseDateInputValue(toDateInputValue(date));
 
-  while (remaining > 0) {
-    cursor = parseDateInputValue(toDateInputValue(new Date(cursor.getTime() + direction * 24 * 60 * 60 * 1000)));
-    if (isWorkDate(cursor, calendar)) {
+  for (let scanned = 0; remaining > 0 && scanned <= MAX_RANGE_DAYS; scanned += 1) {
+    cursor = shiftDate(cursor, direction);
+    if (isWorkDate(cursor, usableCalendar)) {
       remaining -= 1;
     }
   }
@@ -73,22 +93,23 @@ export function addWorkDays(date: Date, amount: number, calendar?: WorkCalendar)
 }
 
 export function differenceInWorkDays(left: Date | string, right: Date | string, calendar?: WorkCalendar) {
+  const usableCalendar = normalizeCalendar(calendar);
   const leftValue = toDateInputValue(new Date(left));
   const rightValue = toDateInputValue(new Date(right));
-  if (!calendar) {
+  if (!usableCalendar) {
     const leftDate = parseDateInputValue(leftValue);
     const rightDate = parseDateInputValue(rightValue);
     return Math.round((leftDate.getTime() - rightDate.getTime()) / (24 * 60 * 60 * 1000));
   }
   if (leftValue === rightValue) return 0;
 
-  const direction = leftValue > rightValue ? 1 : -1;
+  const direction: 1 | -1 = leftValue > rightValue ? 1 : -1;
   let cursor = parseDateInputValue(rightValue);
   let count = 0;
 
-  while (toDateInputValue(cursor) !== leftValue) {
-    cursor = parseDateInputValue(toDateInputValue(new Date(cursor.getTime() + direction * 24 * 60 * 60 * 1000)));
-    if (isWorkDate(cursor, calendar)) {
+  for (let scanned = 0; toDateInputValue(cursor) !== leftValue && scanned <= MAX_RANGE_DAYS; scanned += 1) {
+    cursor = shiftDate(cursor, direction);
+    if (isWorkDate(cursor, usableCalendar)) {
       count += direction;
     }
   }
@@ -97,16 +118,17 @@ export function differenceInWorkDays(left: Date | string, right: Date | string, 
 }
 
 export function countWorkDaysInclusive(start: Date, end: Date, calendar?: WorkCalendar) {
+  const usableCalendar = normalizeCalendar(calendar);
   if (start > end) return 0;
   let cursor = parseDateInputValue(toDateInputValue(start));
   const endValue = toDateInputValue(end);
   let count = 0;
 
-  while (toDateInputValue(cursor) <= endValue) {
-    if (isWorkDate(cursor, calendar)) {
+  for (let scanned = 0; toDateInputValue(cursor) <= endValue && scanned <= MAX_RANGE_DAYS; scanned += 1) {
+    if (isWorkDate(cursor, usableCalendar)) {
       count += 1;
     }
-    cursor = parseDateInputValue(toDateInputValue(new Date(cursor.getTime() + 24 * 60 * 60 * 1000)));
+    cursor = shiftDate(cursor, 1);
   }
 
   return count;

@@ -12,6 +12,20 @@ import { getPayDateForDate, getPeriodForPayDate } from "@/lib/payroll";
 import { getShopWorkCalendar, isWorkDate, serializeWorkDays } from "@/lib/work-schedule";
 
 const moneySchema = z.coerce.number().min(0);
+const ACTION_TIMEOUT_MS = 10000;
+
+async function withActionTimeout<T>(promise: Promise<T>, timeoutMs = ACTION_TIMEOUT_MS) {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<null>((resolve) => {
+    timeout = setTimeout(() => resolve(null), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
 
 function getAdvanceDeductionForPayroll({
   runningNet,
@@ -538,7 +552,7 @@ export async function loginAction(formData: FormData) {
     redirect("/login?error=invalid");
   }
 
-  const ok = await doLogin(parsed.data.email, parsed.data.password);
+  const ok = await withActionTimeout(doLogin(parsed.data.email, parsed.data.password));
   if (!ok) {
     redirect("/login?error=credentials");
   }
@@ -572,12 +586,18 @@ export async function registerAction(formData: FormData) {
   }
 
   try {
-    await doRegister({
-      ownerName: parsed.data.ownerName,
-      shopName: parsed.data.shopName,
-      email: parsed.data.email,
-      password: parsed.data.password
-    });
+    const user = await withActionTimeout(
+      doRegister({
+        ownerName: parsed.data.ownerName,
+        shopName: parsed.data.shopName,
+        email: parsed.data.email,
+        password: parsed.data.password
+      })
+    );
+
+    if (!user) {
+      redirect("/login?mode=register&error=register-invalid");
+    }
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       redirect("/login?mode=register&error=email-taken");
