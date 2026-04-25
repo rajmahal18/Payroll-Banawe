@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { UserPlus, X } from "lucide-react";
 import { createEmployeeAction } from "@/app/actions";
+import { EmployeePhotoField } from "@/components/employee-photo-field";
 import { PayrollScheduleFields } from "@/components/employee-payroll-schedule-fields";
 
 export function EmployeeCreateModal() {
@@ -56,6 +57,10 @@ export function EmployeeCreateModal() {
                 </div>
 
                 <form action={createEmployeeAction} className="grid gap-3 overflow-y-auto px-5 py-4 md:grid-cols-2">
+                  <div className="md:col-span-2">
+                    <label className="mb-1 block text-sm font-medium text-slate-700">Employee Photo</label>
+                    <EmployeePhotoField />
+                  </div>
                   <div>
                     <label className="mb-1 block text-sm font-medium text-slate-700">Full Name</label>
                     <input name="fullName" placeholder="Amina Santos" required />

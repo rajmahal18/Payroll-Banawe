@@ -13,6 +13,12 @@ import { getShopWorkCalendar, isWorkDate, serializeWorkDays } from "@/lib/work-s
 
 const moneySchema = z.coerce.number().min(0);
 const ACTION_TIMEOUT_MS = 10000;
+const employeePhotoSchema = z
+  .string()
+  .trim()
+  .max(220_000)
+  .regex(/^data:image\/(?:jpeg|jpg|png|webp);base64,[a-zA-Z0-9+/=]+$/)
+  .optional();
 
 async function withActionTimeout<T>(promise: Promise<T>, timeoutMs = ACTION_TIMEOUT_MS) {
   let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -83,6 +89,7 @@ async function createEmployeeWithGeneratedCode({
   position,
   dailyRate,
   contactNumber,
+  photoDataUrl,
   startDate,
   lastPaidDate,
   notes,
@@ -93,6 +100,7 @@ async function createEmployeeWithGeneratedCode({
   position?: string;
   dailyRate: number;
   contactNumber?: string;
+  photoDataUrl?: string;
   startDate?: string;
   lastPaidDate?: string;
   notes?: string;
@@ -111,6 +119,7 @@ async function createEmployeeWithGeneratedCode({
             position: position || null,
             dailyRate: new Prisma.Decimal(dailyRate),
             contactNumber: contactNumber || null,
+            photoDataUrl: photoDataUrl || null,
             startDate: startDate ? parseDateInputValue(startDate) : null,
             lastPaidDate: lastPaidDate ? parseDateInputValue(lastPaidDate) : null,
             notes: notes || null,
@@ -147,6 +156,11 @@ async function requireShopEmployee(shopId: string, employeeId: string) {
 
 function isSameDateValue(left: Date, right: Date) {
   return toDateInputValue(left) === toDateInputValue(right);
+}
+
+function optionalEmployeePhoto(value: FormDataEntryValue | null) {
+  const parsed = optionalFormString(value);
+  return parsed ? employeePhotoSchema.parse(parsed) : undefined;
 }
 
 async function hasPayrollAttendanceMismatch(
@@ -625,6 +639,7 @@ export async function createEmployeeAction(formData: FormData) {
     position: z.string().optional(),
     dailyRate: moneySchema,
     contactNumber: z.string().optional(),
+    photoDataUrl: employeePhotoSchema,
     startDate: z.string().optional(),
     lastPaidDate: z.string().optional(),
     notes: z.string().optional()
@@ -636,6 +651,7 @@ export async function createEmployeeAction(formData: FormData) {
     position: optionalFormString(formData.get("position")),
     dailyRate: formData.get("dailyRate"),
     contactNumber: optionalFormString(formData.get("contactNumber")),
+    photoDataUrl: optionalEmployeePhoto(formData.get("photoDataUrl")),
     startDate: optionalFormString(formData.get("startDate")),
     lastPaidDate: optionalFormString(formData.get("lastPaidDate")),
     notes: optionalFormString(formData.get("notes"))
@@ -653,6 +669,7 @@ export async function createEmployeeAction(formData: FormData) {
     position: parsed.position,
     dailyRate: parsed.dailyRate,
     contactNumber: parsed.contactNumber,
+    photoDataUrl: parsed.photoDataUrl,
     startDate: parsed.startDate,
     lastPaidDate: parsed.lastPaidDate,
     notes: parsed.notes,
@@ -671,6 +688,7 @@ export async function updateEmployeeAction(formData: FormData) {
     position: z.string().optional(),
     dailyRate: moneySchema,
     contactNumber: z.string().optional(),
+    photoDataUrl: employeePhotoSchema,
     startDate: z.string().optional(),
     lastPaidDate: z.string().optional(),
     notes: z.string().optional()
@@ -683,6 +701,7 @@ export async function updateEmployeeAction(formData: FormData) {
     position: optionalFormString(formData.get("position")),
     dailyRate: formData.get("dailyRate"),
     contactNumber: optionalFormString(formData.get("contactNumber")),
+    photoDataUrl: optionalEmployeePhoto(formData.get("photoDataUrl")),
     startDate: optionalFormString(formData.get("startDate")),
     lastPaidDate: optionalFormString(formData.get("lastPaidDate")),
     notes: optionalFormString(formData.get("notes"))
@@ -703,6 +722,7 @@ export async function updateEmployeeAction(formData: FormData) {
       position: parsed.position || null,
       dailyRate: new Prisma.Decimal(parsed.dailyRate),
       contactNumber: parsed.contactNumber || null,
+      photoDataUrl: parsed.photoDataUrl || null,
       startDate: parsed.startDate ? parseDateInputValue(parsed.startDate) : null,
       lastPaidDate: parsed.lastPaidDate ? parseDateInputValue(parsed.lastPaidDate) : null,
       notes: parsed.notes || null,

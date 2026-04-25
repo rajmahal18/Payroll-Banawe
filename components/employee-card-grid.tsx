@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { PayrollFrequency } from "@prisma/client";
 import { Clock3, EllipsisVertical, Eye, Pencil, Power, Trash2, X } from "lucide-react";
 import { deleteEmployeeAction, toggleEmployeeStatusAction, updateEmployeeAction } from "@/app/actions";
+import { EmployeePhotoField } from "@/components/employee-photo-field";
 import { PayrollScheduleFields } from "@/components/employee-payroll-schedule-fields";
 import { BUSINESS_TIME_ZONE, formatDate, getWeekdayLabel, toDateInputValue } from "@/lib/utils";
 
@@ -24,6 +25,7 @@ type EmployeeCardItem = {
   startDate: string | null;
   lastPaidDate: string | null;
   contactNumber: string | null;
+  photoDataUrl: string | null;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -96,6 +98,25 @@ function formatDateKey(value: string | Date) {
   return toDateInputValue(new Date(value));
 }
 
+function EmployeeAvatar({
+  employee,
+  size = "md"
+}: {
+  employee: Pick<EmployeeCardItem, "fullName" | "photoDataUrl">;
+  size?: "md" | "lg";
+}) {
+  const sizeClass = size === "lg" ? "h-20 w-20 text-2xl" : "h-16 w-16 text-xl";
+  const radiusClass = size === "lg" ? "rounded-[22px]" : "rounded-[20px]";
+
+  return (
+    <div
+      className={`grid ${sizeClass} shrink-0 place-items-center overflow-hidden ${radiusClass} border border-white/70 bg-[linear-gradient(135deg,#e6f1ed_0%,#edf3fa_100%)] font-semibold text-[#678c84] shadow-[0_14px_24px_-18px_rgba(103,140,132,0.45)]`}
+    >
+      {employee.photoDataUrl ? <img src={employee.photoDataUrl} alt="" className="h-full w-full object-cover" /> : initials(employee.fullName)}
+    </div>
+  );
+}
+
 function EmployeeEditModal({
   employee,
   open,
@@ -143,6 +164,10 @@ function EmployeeEditModal({
         <div className="overflow-y-auto px-5 py-4">
           <form action={updateEmployeeAction} className="grid gap-3 xl:grid-cols-3">
             <input type="hidden" name="employeeId" value={employee.id} />
+            <div className="xl:col-span-3">
+              <label className="mb-1 block text-sm font-medium text-slate-700">Employee Photo</label>
+              <EmployeePhotoField employeeName={employee.fullName} initialValue={employee.photoDataUrl} />
+            </div>
             <div className="xl:col-span-3">
               <label className="mb-1 block text-sm font-medium text-slate-700">Employee Code</label>
               <div className="rounded-2xl border border-[rgba(88,150,88,0.36)] bg-[rgba(229,245,224,0.86)] px-4 py-2.5 text-sm font-semibold text-stone-900">
@@ -252,9 +277,7 @@ function EmployeeViewModal({
 
         <div className="px-5 py-5">
           <div className="flex items-start gap-4 rounded-[24px] border border-[rgba(226,219,211,0.82)] bg-[linear-gradient(135deg,rgba(250,238,224,0.72)_0%,rgba(245,250,247,0.92)_56%,rgba(255,255,255,0.96)_100%)] p-4">
-            <div className="grid h-20 w-20 shrink-0 place-items-center rounded-[22px] bg-[linear-gradient(135deg,#e6f1ed_0%,#edf3fa_100%)] text-2xl font-semibold text-[#678c84] shadow-[0_14px_24px_-18px_rgba(103,140,132,0.45)]">
-              {initials(employee.fullName)}
-            </div>
+            <EmployeeAvatar employee={employee} size="lg" />
             <div className="min-w-0">
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8a7f73]">{employee.employeeCode}</div>
               <h3 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-stone-950">{employee.fullName}</h3>
@@ -591,9 +614,7 @@ export function EmployeeCardGrid({ employees }: { employees: EmployeeCardItem[] 
             <div className="relative">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-4">
-                  <div className="grid h-20 w-20 shrink-0 place-items-center rounded-[22px] border border-white/70 bg-[linear-gradient(135deg,#e6f1ed_0%,#edf3fa_100%)] text-2xl font-semibold text-[#678c84] shadow-[0_14px_24px_-18px_rgba(103,140,132,0.45)]">
-                    {initials(employee.fullName)}
-                  </div>
+                  <EmployeeAvatar employee={employee} size="lg" />
                   <div className="min-w-0">
                     <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8a7f73]">{employee.employeeCode}</div>
                     <h2 className="mt-1 truncate text-xl font-semibold tracking-[-0.03em] text-stone-950">{employee.fullName}</h2>

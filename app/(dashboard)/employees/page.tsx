@@ -245,6 +245,7 @@ export default async function EmployeesPage({
               startDate: employee.startDate ? employee.startDate.toISOString() : null,
               lastPaidDate: employee.lastPaidDate ? employee.lastPaidDate.toISOString() : null,
               contactNumber: employee.contactNumber,
+              photoDataUrl: employee.photoDataUrl,
               notes: employee.notes,
               createdAt: employee.createdAt.toISOString(),
               updatedAt: employee.updatedAt.toISOString(),
