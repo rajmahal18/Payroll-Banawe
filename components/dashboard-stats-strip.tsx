@@ -33,20 +33,25 @@ type Entry = {
 
 export function DashboardStatsStrip({ entries }: { entries: Entry[] }) {
   return (
-    <section className="overflow-hidden rounded-[28px] border border-[rgba(88,150,88,0.34)] bg-[rgba(250,255,247,0.92)] shadow-[0_20px_42px_-36px_rgba(22,78,43,0.20)] backdrop-blur">
-      <div className="grid divide-y divide-[rgba(148,190,139,0.36)] sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-5">
-        {entries.map((entry) => {
+    <section className="overflow-hidden rounded-[22px] border border-[rgba(88,150,88,0.34)] bg-[rgba(250,255,247,0.92)] shadow-[0_20px_42px_-36px_rgba(22,78,43,0.20)] backdrop-blur sm:rounded-[28px]">
+      <div className="grid grid-cols-2 xl:grid-cols-5">
+        {entries.map((entry, index) => {
           const Icon = iconMap[entry.icon];
           const rendered = entry.money ? formatMoney(entry.value) : entry.value;
           const valueClass = typeof entry.value === "string" ? valueToneMap[entry.tone] : "text-stone-950";
           return (
-            <div key={entry.label} className="flex items-center gap-4 px-4 py-4 sm:min-h-[112px] sm:px-5">
-              <div className={`grid h-14 w-14 shrink-0 place-items-center rounded-full ${toneMap[entry.tone]}`}>
-                <Icon className="h-7 w-7" />
+            <div
+              key={entry.label}
+              className={`flex min-h-[76px] items-center gap-2.5 px-3 py-2.5 sm:min-h-[112px] sm:gap-4 sm:px-5 sm:py-4 ${
+                index % 2 === 1 ? "border-l border-[rgba(148,190,139,0.36)]" : ""
+              } ${index > 1 ? "border-t border-[rgba(148,190,139,0.36)]" : ""} xl:border-l xl:border-t-0 xl:border-[rgba(148,190,139,0.36)] xl:first:border-l-0`}
+            >
+              <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-full sm:h-14 sm:w-14 ${toneMap[entry.tone]}`}>
+                <Icon className="h-5 w-5 sm:h-7 sm:w-7" />
               </div>
               <div className="min-w-0">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500">{entry.label}</div>
-                <div className={`mt-1 truncate text-2xl font-semibold tracking-[-0.04em] ${valueClass}`}>{rendered}</div>
+                <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-stone-500 sm:text-[11px] sm:tracking-[0.18em]">{entry.label}</div>
+                <div className={`mt-0.5 truncate text-xl font-semibold tracking-[-0.04em] sm:mt-1 sm:text-2xl ${valueClass}`}>{rendered}</div>
               </div>
             </div>
           );

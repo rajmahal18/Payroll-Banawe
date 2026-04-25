@@ -30,7 +30,7 @@ export function EmployeeCreateModal() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-2 rounded-2xl bg-[#6f9c90] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_14px_28px_-18px_rgba(111,156,144,0.32)] transition hover:bg-[#628b81]"
+        className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#2f7d5b] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_14px_28px_-18px_rgba(111,156,144,0.32)] transition hover:bg-[#25684b] sm:w-auto"
       >
         <UserPlus className="h-4 w-4" />
         Add Employee

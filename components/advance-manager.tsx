@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { X } from "lucide-react";
+import { ChevronRight, X } from "lucide-react";
 import { deleteAdvanceAction, updateAdvanceAction } from "@/app/actions";
 import { formatMoney } from "@/lib/utils";
 
@@ -24,9 +24,12 @@ type AdvanceItem = {
   reason: string;
 };
 
+const PAGE_SIZE = 10;
+
 export function AdvanceManager({ advances, employees }: { advances: AdvanceItem[]; employees: EmployeeOption[] }) {
   const [selected, setSelected] = useState<AdvanceItem | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     setMounted(true);
@@ -42,35 +45,48 @@ export function AdvanceManager({ advances, employees }: { advances: AdvanceItem[
       document.body.style.overflow = originalOverflow;
     };
   }, [selected]);
+  useEffect(() => {
+    setPage(1);
+  }, [advances.length]);
+
+  const totalPages = Math.max(Math.ceil(advances.length / PAGE_SIZE), 1);
+  const currentPage = Math.min(page, totalPages);
+  const visibleAdvances = advances.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const getStatusClass = (status: AdvanceItem["status"]) =>
+    status === "OPEN"
+      ? "bg-emerald-50 text-emerald-700"
+      : status === "CLOSED"
+        ? "bg-stone-100 text-stone-600"
+        : "bg-rose-50 text-rose-700";
 
   return (
     <>
       <section className="panel min-w-0 overflow-hidden">
-        <div className="border-b border-[#d8e8d2] px-5 py-4">
+        <div className="border-b border-[#d8e8d2] px-4 py-3 sm:px-5 sm:py-4">
           <h2 className="text-lg font-semibold text-stone-950">Advance Records</h2>
-          <p className="mt-1 text-sm text-stone-600">Click any item to edit or delete it.</p>
+          <p className="mt-1 text-sm text-stone-600">Open an advance to edit its deduction or status.</p>
         </div>
 
         <div className="divide-y divide-[#d8e8d2]">
           {advances.length ? (
-            advances.map((advance) => (
+            visibleAdvances.map((advance) => (
               <button
                 key={advance.id}
                 type="button"
                 onClick={() => setSelected(advance)}
-                className="grid w-full min-w-0 gap-3 px-4 py-4 text-left transition hover:bg-[#f0f8ec] focus:bg-[#f0f8ec] focus:outline-none sm:px-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
+                className="grid w-full min-w-0 gap-3 px-4 py-3 text-left transition hover:bg-[#f0f8ec] focus:bg-[#f0f8ec] focus:outline-none sm:px-5 sm:py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
               >
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="font-semibold text-stone-950">{advance.employeeName}</div>
-                    <span className="rounded-full bg-[#e2f2d9] px-2.5 py-1 text-[11px] font-bold tracking-[0.18em] text-[#2f7d5b]">
+                    <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold tracking-[0.14em] ${getStatusClass(advance.status)}`}>
                       {advance.status}
                     </span>
                   </div>
                   <div className="mt-1 text-sm text-stone-600">{advance.date}</div>
-                  <div className="mt-2 line-clamp-2 text-sm text-stone-700">{advance.reason || "No reason added"}</div>
+                  <div className="mt-1 line-clamp-2 text-sm text-stone-700">{advance.reason || "No reason added"}</div>
                 </div>
-                <div className="grid grid-cols-2 gap-2 text-sm sm:max-w-xs md:min-w-[220px] md:grid-cols-1 md:justify-items-end">
+                <div className="grid grid-cols-[1fr_1fr_auto] items-stretch gap-2 text-sm sm:max-w-sm md:min-w-[250px] md:grid-cols-[1fr_1fr_auto] md:justify-items-end">
                   <div className="rounded-2xl bg-white/75 px-3 py-2 md:w-full md:max-w-[220px]">
                     <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-stone-500">Amount</div>
                     <div className="font-semibold text-stone-950">{formatMoney(advance.amount)}</div>
@@ -79,6 +95,9 @@ export function AdvanceManager({ advances, employees }: { advances: AdvanceItem[
                     <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-stone-500">Remaining</div>
                     <div className="font-semibold text-[#2f7d5b]">{formatMoney(advance.remainingBalance)}</div>
                   </div>
+                  <span className="grid h-full w-9 place-items-center rounded-2xl bg-white/70 text-stone-400">
+                    <ChevronRight className="h-4 w-4" />
+                  </span>
                 </div>
               </button>
             ))
@@ -86,6 +105,32 @@ export function AdvanceManager({ advances, employees }: { advances: AdvanceItem[
             <div className="px-5 py-10 text-center text-sm text-stone-500">No advances yet.</div>
           )}
         </div>
+        {advances.length > PAGE_SIZE ? (
+          <div className="flex flex-col gap-2 border-t border-[#d8e8d2] px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <div className="text-xs font-medium text-[#7a7168]">
+              Showing {(currentPage - 1) * PAGE_SIZE + 1}-{Math.min(currentPage * PAGE_SIZE, advances.length)} of {advances.length}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((value) => Math.max(value - 1, 1))}
+                disabled={currentPage <= 1}
+                className="rounded-2xl border border-[rgba(88,150,88,0.36)] bg-white px-3 py-2 text-xs font-semibold text-stone-700 disabled:border-stone-200 disabled:bg-stone-50 disabled:text-stone-400"
+              >
+                Prev
+              </button>
+              <span className="text-xs font-semibold text-stone-600">{currentPage} / {totalPages}</span>
+              <button
+                type="button"
+                onClick={() => setPage((value) => Math.min(value + 1, totalPages))}
+                disabled={currentPage >= totalPages}
+                className="rounded-2xl border border-[rgba(88,150,88,0.36)] bg-white px-3 py-2 text-xs font-semibold text-stone-700 disabled:border-stone-200 disabled:bg-stone-50 disabled:text-stone-400"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        ) : null}
       </section>
 
       {mounted && selected

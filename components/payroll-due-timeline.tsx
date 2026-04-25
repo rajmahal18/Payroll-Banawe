@@ -6,7 +6,7 @@ import { CalendarClock, CheckCheck, ChevronRight, Coins, ReceiptText, UsersRound
 import { markPayrollPaidForDateAction } from "@/app/actions";
 import { formatDate, formatMoney, parseDateInputValue } from "@/lib/utils";
 
-type TimelineEmployeeDetail = {
+export type TimelineEmployeeDetail = {
   employeeId: string;
   employeeName: string;
   employeeCode: string;
@@ -31,7 +31,7 @@ function formatDateList(values: string[]) {
   return values.map((value) => formatDate(value)).join(", ");
 }
 
-type TimelineEntry = {
+export type TimelineEntry = {
   id: string;
   payDateValue: string;
   payDateLabel: string;
@@ -53,11 +53,13 @@ function isTodayEntry(entry: TimelineEntry) {
 function PayrollTimelineModal({
   entry,
   open,
-  onClose
+  onClose,
+  mode = "compact"
 }: {
   entry: TimelineEntry | null;
   open: boolean;
   onClose: () => void;
+  mode?: "compact" | "full";
 }) {
   const [mounted, setMounted] = useState(false);
 
@@ -98,6 +100,7 @@ function PayrollTimelineModal({
             ) : (
               <form action={markPayrollPaidForDateAction}>
                 <input type="hidden" name="payDate" value={entry.payDateValue} />
+                {mode === "full" ? <input type="hidden" name="redirectTo" value="/payroll" /> : null}
                 <button className="inline-flex items-center gap-2 rounded-2xl bg-[#0f766e] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#0b5f59]">
                   <CheckCheck className="h-4 w-4" />
                   Mark as Paid
@@ -181,9 +184,6 @@ function PayrollTimelineModal({
                       <div className="flex items-center justify-between gap-4 rounded-[18px] border border-[rgba(160,205,190,0.9)] bg-[rgba(236,247,243,0.96)] px-3 py-3">
                         <div>
                           <div className="font-semibold text-[#2d6258]">Expected take-home</div>
-                          <div className="text-[#5d7b74]">
-                            {formatMoney(detail.grossPay)} + {formatMoney(detail.bonusesAdded)} - {formatMoney(detail.advancesDeducted)} - {formatMoney(detail.payablesDeducted)}
-                          </div>
                         </div>
                         <div className="shrink-0 text-lg font-semibold text-[#2d6258]">{formatMoney(detail.expectedAmount)}</div>
                     </div>
@@ -199,7 +199,7 @@ function PayrollTimelineModal({
   );
 }
 
-export function PayrollDueTimeline({ entries, todayValue }: { entries: TimelineEntry[]; todayValue: string }) {
+export function PayrollDueTimeline({ entries, todayValue, mode = "compact" }: { entries: TimelineEntry[]; todayValue: string; mode?: "compact" | "full" }) {
   const [activeEntry, setActiveEntry] = useState<TimelineEntry | null>(null);
   const todayDate = parseDateInputValue(todayValue);
   const todayLabel = formatDate(todayDate);
@@ -221,8 +221,14 @@ export function PayrollDueTimeline({ entries, todayValue }: { entries: TimelineE
           <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8a7f73]">Due Timeline</div>
           <div className="mt-2 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <h2 className="text-2xl font-semibold tracking-[-0.04em] text-stone-950">Upcoming sahod days</h2>
-              <p className="mt-1 text-sm text-[#7a7168]">Quick scan of scheduled payroll payouts for your active employees.</p>
+              <h2 className="text-2xl font-semibold tracking-[-0.04em] text-stone-950">
+                {mode === "full" ? "Sahod timeline" : "Upcoming sahod days"}
+              </h2>
+              <p className="mt-1 text-sm text-[#7a7168]">
+                {mode === "full"
+                  ? "Open any sahod day to inspect attendance, additions, deductions, and expected take-home pay."
+                  : "Quick scan of scheduled payroll payouts for your active employees."}
+              </p>
             </div>
             <div className="inline-flex items-center gap-2 rounded-full border border-[rgba(197,222,244,0.9)] bg-[rgba(232,244,255,0.8)] px-3 py-2 text-sm font-semibold text-[#44739f]">
               <CalendarClock className="h-4 w-4" />
@@ -241,23 +247,23 @@ export function PayrollDueTimeline({ entries, todayValue }: { entries: TimelineE
                   return (
                     <div
                       key={`today-${todayValue}`}
-                      className="relative flex flex-col gap-3 rounded-[24px] bg-[rgba(232,244,255,0.68)] px-3 py-4 sm:px-4"
+                      className="relative flex flex-col gap-3 rounded-[24px] border border-[#f0d48a] bg-[#fff4d8] px-3 py-4 shadow-[inset_4px_0_0_#d97706] sm:px-4"
                     >
                       {showConnector ? (
-                        <span className="absolute left-[18px] top-[52px] h-[calc(100%-2.5rem)] w-px bg-[rgba(214,205,194,0.86)] sm:left-[19px]" />
+                        <span className="absolute left-[18px] top-[52px] h-[calc(100%-2.5rem)] w-px bg-[#e5c676] sm:left-[19px]" />
                       ) : null}
 
                       <div className="flex items-start gap-4">
-                        <div className="relative z-[1] mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-[#0f92f2] bg-white shadow-sm">
-                          <span className="h-2.5 w-2.5 rounded-full bg-[#0f92f2]" />
+                        <div className="relative z-[1] mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-[#d97706] bg-white shadow-sm">
+                          <span className="h-2.5 w-2.5 rounded-full bg-[#d97706]" />
                         </div>
 
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                             <div className="min-w-0">
-                              <div className="text-xl font-semibold tracking-[-0.03em] text-[#1988d8]">{todayLabel}</div>
-                              <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[#6d756f]">
-                                <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(232,244,255,0.92)] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#1677c5]">
+                              <div className="text-xl font-semibold tracking-[-0.03em] text-[#9a5b05]">{todayLabel}</div>
+                              <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[#7c5f2a]">
+                                <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#9a5b05]">
                                   <WalletCards className="h-3.5 w-3.5" />
                                   Today
                                 </span>
@@ -265,7 +271,7 @@ export function PayrollDueTimeline({ entries, todayValue }: { entries: TimelineE
                               </div>
                             </div>
 
-                            <div className="flex items-center gap-2 text-sm font-semibold text-[#1677c5]">
+                            <div className="flex items-center gap-2 text-sm font-semibold text-[#9a5b05]">
                               <span>Today</span>
                             </div>
                           </div>
@@ -289,7 +295,9 @@ export function PayrollDueTimeline({ entries, todayValue }: { entries: TimelineE
                         ? "bg-[rgba(232,246,238,0.82)] hover:bg-[rgba(224,242,232,0.92)]"
                         : overdue
                           ? "bg-[rgba(255,241,236,0.82)] hover:bg-[rgba(255,235,228,0.92)]"
-                          : today || index === 0
+                          : today
+                            ? "border border-[#f0d48a] bg-[#fff4d8] shadow-[inset_4px_0_0_#d97706] hover:bg-[#ffecc0]"
+                            : index === 0
                             ? "bg-[rgba(244,248,252,0.64)] hover:bg-[rgba(244,248,252,0.82)]"
                             : "hover:bg-[rgba(244,248,252,0.76)]"
                     } ${
@@ -302,10 +310,10 @@ export function PayrollDueTimeline({ entries, todayValue }: { entries: TimelineE
 
                     <div className="flex items-start gap-4">
                       <div className={`relative z-[1] mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 bg-white shadow-sm ${
-                        entry.isPaid ? "border-emerald-500" : overdue ? "border-[#ea580c]" : "border-[#0f92f2]"
+                        entry.isPaid ? "border-emerald-500" : overdue ? "border-[#ea580c]" : today ? "border-[#d97706]" : "border-[#0f92f2]"
                       }`}>
                         <span className={`h-2.5 w-2.5 rounded-full ${
-                          entry.isPaid ? "bg-emerald-500" : overdue ? "bg-[#ea580c]" : "bg-[#0f92f2]"
+                          entry.isPaid ? "bg-emerald-500" : overdue ? "bg-[#ea580c]" : today ? "bg-[#d97706]" : "bg-[#0f92f2]"
                         }`} />
                       </div>
 
@@ -313,7 +321,7 @@ export function PayrollDueTimeline({ entries, todayValue }: { entries: TimelineE
                         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                           <div className="min-w-0">
                             <div className={`text-xl font-semibold tracking-[-0.03em] ${
-                              entry.isPaid ? "text-emerald-700" : overdue ? "text-[#ea580c]" : "text-[#1988d8]"
+                              entry.isPaid ? "text-emerald-700" : overdue ? "text-[#ea580c]" : today ? "text-[#9a5b05]" : "text-[#1988d8]"
                             }`}>{entry.payDateLabel}</div>
                             <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[#6d756f]">
                               <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${
@@ -321,6 +329,8 @@ export function PayrollDueTimeline({ entries, todayValue }: { entries: TimelineE
                                   ? "bg-emerald-50 text-emerald-700"
                                   : overdue
                                     ? "bg-orange-50 text-[#ea580c]"
+                                    : today
+                                      ? "bg-white text-[#9a5b05]"
                                     : "bg-[rgba(232,244,255,0.88)] text-[#1677c5]"
                               }`}>
                                 <WalletCards className="h-3.5 w-3.5" />
@@ -338,7 +348,7 @@ export function PayrollDueTimeline({ entries, todayValue }: { entries: TimelineE
                               <div className="mt-1 text-base font-semibold text-stone-950">{formatMoney(entry.expectedTotal)}</div>
                             </div>
                             <div className={`flex items-center gap-2 text-sm font-semibold ${
-                              entry.isPaid ? "text-emerald-700" : overdue ? "text-[#ea580c]" : "text-[#1677c5]"
+                              entry.isPaid ? "text-emerald-700" : overdue ? "text-[#ea580c]" : today ? "text-[#9a5b05]" : "text-[#1677c5]"
                             }`}>
                               <span>{entry.dueLabel}</span>
                               <ChevronRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
@@ -372,7 +382,7 @@ export function PayrollDueTimeline({ entries, todayValue }: { entries: TimelineE
         )}
       </section>
 
-      <PayrollTimelineModal entry={activeEntry} open={Boolean(activeEntry)} onClose={() => setActiveEntry(null)} />
+      <PayrollTimelineModal entry={activeEntry} open={Boolean(activeEntry)} onClose={() => setActiveEntry(null)} mode={mode} />
     </>
   );
 }

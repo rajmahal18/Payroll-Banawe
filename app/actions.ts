@@ -1025,11 +1025,17 @@ export async function finalizePayrollAction(formData: FormData) {
 export async function markPayrollPaidForDateAction(formData: FormData) {
   const user = await requireUser();
   const targetDate = startOfDayLocal(parseDateInputValue(z.string().parse(formData.get("payDate"))));
+  const redirectTo = String(formData.get("redirectTo") || "/dashboard");
   const dueCount = (await ensurePayrollPeriodsForDate({ shopId: user.shop.id, targetDate })) ?? 0;
 
   if (!dueCount) {
     revalidatePath("/dashboard");
-    redirect(`/dashboard?error=no-due-payroll&date=${toDateInputValue(targetDate)}`);
+    revalidatePath("/payroll");
+    redirect(
+      redirectTo === "/payroll"
+        ? `/payroll?error=no-due-payroll`
+        : `/dashboard?error=no-due-payroll&date=${toDateInputValue(targetDate)}`
+    );
   }
 
   const duePeriods = await prisma.payrollPeriod.findMany({
@@ -1059,7 +1065,11 @@ export async function markPayrollPaidForDateAction(formData: FormData) {
   if (attendanceMismatch) {
     revalidatePath("/dashboard");
     revalidatePath("/payroll");
-    redirect(`/dashboard?error=attendance-mismatch&date=${toDateInputValue(targetDate)}`);
+    redirect(
+      redirectTo === "/payroll"
+        ? `/payroll?error=attendance-mismatch`
+        : `/dashboard?error=attendance-mismatch&date=${toDateInputValue(targetDate)}`
+    );
   }
 
   await prisma.payrollPeriod.updateMany({
@@ -1116,5 +1126,5 @@ export async function markPayrollPaidForDateAction(formData: FormData) {
   revalidatePath("/dashboard");
   revalidatePath("/employees");
   revalidatePath("/payroll");
-  redirect(`/dashboard?paid=1&date=${toDateInputValue(targetDate)}`);
+  redirect(redirectTo === "/payroll" ? "/payroll?paid=1" : `/dashboard?paid=1&date=${toDateInputValue(targetDate)}`);
 }

@@ -109,6 +109,25 @@ input[type="submit"][data-loading="true"][aria-busy="true"] {
   }
 }
 
+.fab-icon-flash {
+  animation: fab-icon-flash 1.35s ease-in-out infinite;
+}
+
+@keyframes fab-icon-flash {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 rgba(255, 255, 255, 0));
+  }
+
+  45% {
+    opacity: 0.72;
+    transform: scale(0.9);
+    filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.82));
+  }
+}
+
 ::selection {
   background: #16784f;
   color: white;

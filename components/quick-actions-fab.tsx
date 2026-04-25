@@ -43,7 +43,7 @@ export function QuickActionsFab() {
         aria-label={open ? "Close quick actions" : "Open quick actions"}
         className="pointer-events-auto inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-[#16784f] text-white shadow-[0_24px_46px_-24px_rgba(22,120,79,0.48)] transition hover:bg-[#14532d]"
       >
-        {open ? <X className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
+        {open ? <X className="fab-icon-flash h-5 w-5" /> : <Plus className="fab-icon-flash h-5 w-5" />}
       </button>
     </div>
   );

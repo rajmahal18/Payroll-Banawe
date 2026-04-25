@@ -12,13 +12,13 @@ const tabs = [
   {
     key: "advances",
     label: "Advances",
-    description: "Cash advances that will be deducted from payroll.",
+    description: "Deductions from payroll",
     icon: CircleDollarSign
   },
   {
     key: "bonuses",
     label: "Bonuses",
-    description: "One-time additions that increase payroll payout.",
+    description: "Extra payroll additions",
     icon: Gift
   }
 ] as const;
@@ -83,29 +83,30 @@ export default async function AdvancesPage({
     <div>
       <PageHeader
         title="Adjustments"
-        description="Handle payroll extras in one place. Switch between cash advances and bonuses without leaving the page."
+        description="Record money added to or deducted from payroll."
       />
 
       <section className="panel min-w-0 overflow-hidden">
-        <div className="border-b border-[#d8e8d2] px-4 py-4 sm:px-5">
-          <div className="grid gap-2 sm:grid-cols-2">
+        <div className="px-3 py-3 sm:px-5 sm:py-4">
+          <div className="grid grid-cols-2 gap-2">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const active = activeTab === tab.key;
+              const count = tab.key === "advances" ? advanceItems.length : bonusItems.length;
 
               return (
                 <Link
                   key={tab.key}
                   href={tab.key === "advances" ? "/advances" : "/advances?tab=bonuses"}
-                  className={`min-w-0 rounded-[22px] border px-4 py-3 transition ${
+                  className={`min-w-0 rounded-[18px] border px-3 py-2.5 transition sm:rounded-[22px] sm:px-4 sm:py-3 ${
                     active
                       ? "border-[#bcd8bf] bg-[linear-gradient(135deg,#eff8ed_0%,#f3fbf0_60%,#edf8f6_100%)] text-stone-950 shadow-[0_18px_40px_-34px_rgba(22,78,43,0.22)]"
                       : "border-transparent bg-white/65 text-stone-600 hover:border-[#d8e8d2] hover:bg-white/90 hover:text-stone-950"
                   }`}
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 sm:gap-3">
                     <span
-                      className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border ${
+                      className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border sm:h-10 sm:w-10 sm:rounded-2xl ${
                         active
                           ? "border-[#cfe3c8] bg-[#eef7e9] text-[#16784f]"
                           : "border-[#e3efe0] bg-white text-stone-500"
@@ -114,8 +115,13 @@ export default async function AdvancesPage({
                       <Icon className="h-4 w-4" />
                     </span>
                     <div className="min-w-0">
-                      <div className="text-sm font-semibold">{tab.label}</div>
-                      <div className="mt-0.5 text-xs leading-5 text-inherit/80">{tab.description}</div>
+                      <div className="flex items-center gap-2">
+                        <div className="truncate text-sm font-semibold">{tab.label}</div>
+                        <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${active ? "bg-white/80 text-[#16784f]" : "bg-[#edf7ef] text-stone-500"}`}>
+                          {count}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 hidden truncate text-xs leading-5 text-inherit/80 sm:block">{tab.description}</div>
                     </div>
                   </div>
                 </Link>
@@ -123,31 +129,23 @@ export default async function AdvancesPage({
             })}
           </div>
         </div>
-
-        <div className="grid gap-3 border-b border-[#d8e8d2] bg-[rgba(246,252,242,0.82)] px-4 py-4 text-sm text-stone-700 sm:grid-cols-2 sm:px-5">
-          <div className="rounded-[20px] border border-[#dbead5] bg-white/75 px-4 py-3">
-            <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#7a8b74]">Active Tab</div>
-            <div className="mt-1 text-base font-semibold text-stone-950">
-              {activeTab === "advances" ? "Advances" : "Bonuses"}
-            </div>
-          </div>
-          <div className="rounded-[20px] border border-[#dbead5] bg-white/75 px-4 py-3">
-            <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#7a8b74]">Records</div>
-            <div className="mt-1 text-base font-semibold text-stone-950">
-              {activeTab === "advances" ? advanceItems.length : bonusItems.length}
-            </div>
-          </div>
-        </div>
       </section>
 
-      <div className="mt-4 grid min-w-0 gap-4 xl:grid-cols-[0.92fr_1.08fr]">
+      <div className="mt-3 grid min-w-0 gap-4 xl:grid-cols-[0.92fr_1.08fr]">
         {activeTab === "advances" ? (
           <>
-            <section className="panel min-w-0 p-5">
-              <h2 className="text-lg font-semibold text-slate-950">Record Advance</h2>
-              <p className="mt-1 text-sm text-slate-600">Create an advance and set how it should be deducted in payroll.</p>
+            <section className="panel min-w-0 p-4 sm:p-5">
+              <div className="flex items-start gap-3">
+                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#e2f2d9] text-[#2f7d5b]">
+                  <CircleDollarSign className="h-5 w-5" />
+                </span>
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-950">Record Advance</h2>
+                  <p className="mt-1 text-sm text-slate-600">Set the amount, then choose full or partial deduction.</p>
+                </div>
+              </div>
 
-              <form action={createAdvanceAction} className="mt-4 space-y-4">
+              <form action={createAdvanceAction} className="mt-4 space-y-3 sm:space-y-4">
                 <div>
                   <label className="mb-1 block text-sm font-medium text-slate-700">Employee</label>
                   <select name="employeeId" required>
@@ -178,7 +176,7 @@ export default async function AdvancesPage({
                   <label className="mb-1 block text-sm font-medium text-slate-700">Reason</label>
                   <textarea name="reason" rows={3} placeholder="Optional reason" />
                 </div>
-                <button className="rounded-2xl bg-[#2f7d5b] px-4 py-3 text-sm font-semibold text-white hover:bg-[#25684b]">Save Advance</button>
+                <button className="w-full rounded-2xl bg-[#2f7d5b] px-4 py-3 text-sm font-semibold text-white hover:bg-[#25684b] sm:w-auto">Save Advance</button>
               </form>
             </section>
 
@@ -186,11 +184,18 @@ export default async function AdvancesPage({
           </>
         ) : (
           <>
-            <section className="panel min-w-0 p-5">
-              <h2 className="text-lg font-semibold text-slate-950">Record Bonus</h2>
-              <p className="mt-1 text-sm text-slate-600">Add a one-time payout adjustment for the selected employee.</p>
+            <section className="panel min-w-0 p-4 sm:p-5">
+              <div className="flex items-start gap-3">
+                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+                  <Gift className="h-5 w-5" />
+                </span>
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-950">Record Bonus</h2>
+                  <p className="mt-1 text-sm text-slate-600">Add a one-time extra payout for an employee.</p>
+                </div>
+              </div>
 
-              <form action={createBonusAction} className="mt-4 space-y-4">
+              <form action={createBonusAction} className="mt-4 space-y-3 sm:space-y-4">
                 <div>
                   <label className="mb-1 block text-sm font-medium text-slate-700">Employee</label>
                   <select name="employeeId" required>
@@ -214,7 +219,7 @@ export default async function AdvancesPage({
                   <label className="mb-1 block text-sm font-medium text-slate-700">Reason</label>
                   <textarea name="reason" rows={3} placeholder="Optional performance note" />
                 </div>
-                <button className="rounded-2xl bg-[#2f7d5b] px-4 py-3 text-sm font-semibold text-white hover:bg-[#25684b]">Save Bonus</button>
+                <button className="w-full rounded-2xl bg-[#2f7d5b] px-4 py-3 text-sm font-semibold text-white hover:bg-[#25684b] sm:w-auto">Save Bonus</button>
               </form>
             </section>
 

@@ -9,6 +9,7 @@ import {
   getLivePayrollAttendanceMetrics
 } from "@/lib/payroll-live";
 import { describePayrollFrequency, getPayDateForDate, getPeriodForPayDate, getTimelineRetentionDays } from "@/lib/payroll";
+import { getPayrollTimelineEntries } from "@/lib/payroll-timeline";
 import { prisma } from "@/lib/prisma";
 import {
   addBusinessDays,
@@ -556,6 +557,7 @@ export default async function DashboardPage({
       return parseDateInputValue(a.payDateValue).getTime() - parseDateInputValue(b.payDateValue).getTime();
     })
     .slice(0, 8);
+  const sharedTimelineEntries = await getPayrollTimelineEntries({ shopId: user.shop.id, limit: 8 });
   const dateSnapshots = Array.from({ length: 7 }, (_, index) => {
     const date = addBusinessDays(selectedDate, index - 3);
     const snapshotDateValue = toDateInputValue(date);
@@ -650,8 +652,8 @@ export default async function DashboardPage({
           title={`Attendance for ${formatDate(selectedDate)}`}
           subtitle={
             hasSavedAttendance && !isEditingAttendance
-              ? "Attendance for this day is already saved. Indicators are now read-only until you choose to edit."
-              : "Everyone starts as present by default. Use Absent or Half Day only when needed, then add notes for exceptions."
+              ? "Saved for this day. Edit only if something changed."
+              : "Everyone starts present. Mark only Absent or Half Day, then save."
           }
           dateValue={dateValue}
           redirectTo="/dashboard"
@@ -672,7 +674,7 @@ export default async function DashboardPage({
       </div>
 
       <div className="mt-4">
-        <PayrollDueTimeline entries={mergedTimelineEntries} todayValue={toDateInputValue(todayStart)} />
+        <PayrollDueTimeline entries={sharedTimelineEntries} todayValue={toDateInputValue(todayStart)} />
       </div>
     </div>
   );
