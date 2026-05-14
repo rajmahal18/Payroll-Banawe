@@ -7,7 +7,7 @@ import { Prisma, DeductionType, EmployeeStatus, LedgerStatus, PayrollFrequency, 
 import { login as doLogin, register as doRegister, requireUser, logout } from "@/lib/auth";
 import { getCoveredDaysForPayroll, getEffectivePayrollStart, getLivePayrollAttendanceMetrics } from "@/lib/payroll-live";
 import { prisma } from "@/lib/prisma";
-import { endOfDayLocal, parseDateInputValue, startOfDayLocal, toDateInputValue } from "@/lib/utils";
+import { endOfDayLocal, formatDate, parseDateInputValue, startOfDayLocal, toDateInputValue } from "@/lib/utils";
 import { getPayDateForDate, getPeriodForPayDate } from "@/lib/payroll";
 import { getShopWorkCalendar, isWorkDate, serializeWorkDays } from "@/lib/work-schedule";
 
@@ -53,6 +53,14 @@ function getAdvanceDeductionForPayroll({
   }
 
   return cappedBalance;
+}
+
+function formatPeriodLabel(periodStart: Date, periodEnd: Date, payDate: Date) {
+  if (toDateInputValue(periodStart) === toDateInputValue(periodEnd)) {
+    return formatDate(payDate);
+  }
+
+  return `${formatDate(periodStart)} - ${formatDate(periodEnd)}`;
 }
 
 function getEmployeeCodeSequence(employeeCode: string) {
@@ -1508,4 +1516,216 @@ export async function markPayrollPaidForDateAction(formData: FormData) {
   revalidatePath("/employees");
   revalidatePath("/payroll");
   redirect(redirectTo === "/payroll" ? "/payroll?paid=1" : `/dashboard?paid=1&date=${toDateInputValue(targetDate)}`);
+}
+
+export async function markPayrollHistoryPaidAction(formData: FormData) {
+  const user = await requireUser();
+  const payDate = startOfDayLocal(parseDateInputValue(z.string().parse(formData.get("payDate"))));
+  const periodStart = startOfDayLocal(parseDateInputValue(z.string().parse(formData.get("periodStart"))));
+  const periodEnd = startOfDayLocal(parseDateInputValue(z.string().parse(formData.get("periodEnd"))));
+  const employeeIds = z
+    .string()
+    .parse(formData.get("employeeIds"))
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+
+  if (!employeeIds.length) {
+    revalidatePath("/payroll");
+    redirect("/payroll?tab=history&error=no-due-payroll");
+  }
+
+  const workCalendar = await getShopWorkCalendar(user.shop.id);
+  const payrollPeriod = await prisma.$transaction(async (tx) => {
+    const employees = await tx.employee.findMany({
+      where: {
+        id: { in: employeeIds },
+        shopId: user.shop.id
+      }
+    });
+
+    if (!employees.length) return null;
+
+    const upserted = await tx.payrollPeriod.upsert({
+      where: {
+        shopId_periodStart_periodEnd: {
+          shopId: user.shop.id,
+          periodStart,
+          periodEnd
+        }
+      },
+      update: {
+        payDate,
+        label: `Payroll - ${formatPeriodLabel(periodStart, periodEnd, payDate)}`
+      },
+      create: {
+        shopId: user.shop.id,
+        label: `Payroll - ${formatPeriodLabel(periodStart, periodEnd, payDate)}`,
+        periodStart,
+        periodEnd,
+        payDate,
+        status: PayrollPeriodStatus.DRAFT
+      }
+    });
+
+    for (const employee of employees) {
+      const existingEntry = await tx.payrollEntry.findUnique({
+        where: {
+          payrollPeriodId_employeeId: {
+            payrollPeriodId: upserted.id,
+            employeeId: employee.id
+          }
+        }
+      });
+
+      if (existingEntry) continue;
+
+      const coveredDays = getCoveredDaysForPayroll(periodStart, periodEnd, employee.startDate, workCalendar);
+      const effectiveAttendanceStart = getEffectivePayrollStart(periodStart, employee.startDate);
+      const attendance =
+        coveredDays === 0
+          ? []
+          : await tx.attendanceRecord.findMany({
+              where: {
+                employeeId: employee.id,
+                date: {
+                  gte: effectiveAttendanceStart,
+                  lte: endOfDayLocal(periodEnd)
+                }
+              }
+            });
+      const payableAttendance = attendance.filter((item) => isWorkDate(item.date, workCalendar));
+      const daysAbsent = payableAttendance.filter((item) => item.status === "ABSENT").length;
+      const daysHalf = payableAttendance.filter((item) => String(item.status) === "HALF_DAY").length;
+      const daysPresent = Math.max(coveredDays - daysAbsent - daysHalf, 0);
+      const paidDayUnits = new Prisma.Decimal(daysPresent).plus(new Prisma.Decimal(daysHalf).mul(0.5));
+      const grossPay = paidDayUnits.mul(employee.dailyRate);
+      const bonuses = await tx.bonus.findMany({
+        where: {
+          employeeId: employee.id,
+          status: LedgerStatus.OPEN,
+          date: { lte: endOfDayLocal(periodEnd) }
+        },
+        orderBy: { date: "asc" }
+      });
+      const advances = await tx.advance.findMany({
+        where: {
+          employeeId: employee.id,
+          status: LedgerStatus.OPEN,
+          date: { lte: endOfDayLocal(periodEnd) }
+        },
+        orderBy: { date: "asc" }
+      });
+      const payables = await tx.payable.findMany({
+        where: {
+          employeeId: employee.id,
+          status: LedgerStatus.OPEN,
+          date: { lte: endOfDayLocal(periodEnd) }
+        },
+        orderBy: { date: "asc" }
+      });
+
+      let bonusTotal = new Prisma.Decimal(0);
+      for (const bonus of bonuses) {
+        bonusTotal = bonusTotal.plus(bonus.amount);
+      }
+
+      let runningNet = grossPay.plus(bonusTotal);
+      let deductedAdvanceTotal = new Prisma.Decimal(0);
+      let deductedPayableTotal = new Prisma.Decimal(0);
+
+      for (const bonus of bonuses) {
+        await tx.bonus.update({
+          where: { id: bonus.id },
+          data: { status: LedgerStatus.CLOSED }
+        });
+      }
+
+      for (const advance of advances) {
+        if (runningNet.lte(0)) break;
+        const deduction = getAdvanceDeductionForPayroll({
+          runningNet,
+          remainingBalance: advance.remainingBalance,
+          deductionPerPayroll: advance.deductionPerPayroll
+        });
+        if (deduction.gt(0)) {
+          runningNet = runningNet.minus(deduction);
+          deductedAdvanceTotal = deductedAdvanceTotal.plus(deduction);
+          const newRemaining = advance.remainingBalance.minus(deduction);
+          await tx.advance.update({
+            where: { id: advance.id },
+            data: {
+              deductedAmount: advance.deductedAmount.plus(deduction),
+              remainingBalance: newRemaining,
+              status: newRemaining.eq(0) ? LedgerStatus.CLOSED : LedgerStatus.OPEN
+            }
+          });
+        }
+      }
+
+      for (const payable of payables) {
+        if (runningNet.lte(0)) break;
+        const deduction = runningNet.lessThan(payable.remainingBalance) ? runningNet : payable.remainingBalance;
+        if (deduction.gt(0)) {
+          runningNet = runningNet.minus(deduction);
+          deductedPayableTotal = deductedPayableTotal.plus(deduction);
+          const newRemaining = payable.remainingBalance.minus(deduction);
+          await tx.payable.update({
+            where: { id: payable.id },
+            data: {
+              deductedAmount: payable.deductedAmount.plus(deduction),
+              remainingBalance: newRemaining,
+              status: newRemaining.eq(0) ? LedgerStatus.CLOSED : LedgerStatus.OPEN
+            }
+          });
+        }
+      }
+
+      await tx.payrollEntry.create({
+        data: {
+          payrollPeriodId: upserted.id,
+          employeeId: employee.id,
+          daysPresent,
+          daysHalf,
+          daysAbsent,
+          grossPay,
+          totalBonusesAdded: bonusTotal,
+          totalAdvancesDeducted: deductedAdvanceTotal,
+          totalPayablesDeducted: deductedPayableTotal,
+          netPay: runningNet
+        } as never
+      });
+    }
+
+    await tx.payrollPeriod.update({
+      where: { id: upserted.id },
+      data: { status: PayrollPeriodStatus.PAID }
+    });
+
+    await Promise.all(
+      employees.map((employee) =>
+        tx.employee.update({
+          where: { id: employee.id },
+          data: {
+            lastPaidDate:
+              !employee.lastPaidDate || startOfDayLocal(employee.lastPaidDate) < payDate
+                ? payDate
+                : employee.lastPaidDate
+          }
+        })
+      )
+    );
+
+    return upserted;
+  });
+
+  if (!payrollPeriod) {
+    revalidatePath("/payroll");
+    redirect("/payroll?tab=history&error=no-due-payroll");
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/employees");
+  revalidatePath("/payroll");
+  redirect("/payroll?tab=history&paid=1");
 }
