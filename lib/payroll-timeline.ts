@@ -28,6 +28,13 @@ function addCalendarDays(date: Date, amount: number) {
   return parseDateInputValue(toDateInputValue(new Date(date.getTime() + amount * 24 * 60 * 60 * 1000)));
 }
 
+function latestDate(...dates: Array<Date | null | undefined>) {
+  return dates.reduce<Date | null>((latest, date) => {
+    if (!date) return latest;
+    return !latest || date > latest ? date : latest;
+  }, null);
+}
+
 function buildAttendanceCalendarDays({
   periodStart,
   periodEnd,
@@ -168,14 +175,35 @@ export async function getPayrollTimelineEntries({
     })
   ]);
 
+  const latestOpenPayDateByEmployee = new Map<string, Date>();
+  const latestPaidDateByEmployee = new Map<string, Date>();
+  existingTimelinePeriods.forEach((period) => {
+    period.payrollEntries.forEach((entry) => {
+      if (period.status === "PAID") {
+        const current = latestPaidDateByEmployee.get(entry.employeeId);
+        if (!current || period.payDate > current) {
+          latestPaidDateByEmployee.set(entry.employeeId, period.payDate);
+        }
+      } else {
+        const current = latestOpenPayDateByEmployee.get(entry.employeeId);
+        if (!current || period.payDate > current) {
+          latestOpenPayDateByEmployee.set(entry.employeeId, period.payDate);
+        }
+      }
+    });
+  });
   const nextPayrollEvents = employees
     .map((employee) => {
+      const latestPersistedPaidDate = latestPaidDateByEmployee.get(employee.id) ?? null;
+      const latestOpenPayDate = latestOpenPayDateByEmployee.get(employee.id) ?? null;
+      const effectiveScheduleAnchor = latestDate(employee.lastPaidDate, latestPersistedPaidDate, latestOpenPayDate);
+      const employeeSchedule = { ...employee, lastPaidDate: effectiveScheduleAnchor };
       const baseDate = employee.startDate && startOfDayLocal(employee.startDate) > todayStart ? startOfDayLocal(employee.startDate) : todayStart;
-      const payDate = getPayDateForDate(baseDate, employee, workCalendar);
-      const period = getPeriodForPayDate(payDate, employee, workCalendar);
+      const payDate = getPayDateForDate(baseDate, employeeSchedule, workCalendar);
+      const period = getPeriodForPayDate(payDate, employeeSchedule, workCalendar);
 
       return {
-        employee,
+        employee: employeeSchedule,
         payDate,
         period
       };

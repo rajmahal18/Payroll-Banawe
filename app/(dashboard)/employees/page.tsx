@@ -212,11 +212,11 @@ export default async function EmployeesPage({
         }
       />
 
-      <div className="mb-3 grid grid-cols-2 gap-2 rounded-[22px] border border-[rgba(88,150,88,0.30)] bg-[rgba(250,255,247,0.86)] p-2">
+      <div className="mb-4 grid grid-cols-2 gap-1 rounded-2xl border border-[rgba(121,150,118,0.24)] bg-white p-1 shadow-sm">
         <a
           href={buildEmployeesHref({ tab: "people", search })}
           className={`flex min-w-0 items-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-semibold transition ${
-            activeTab === "people" ? "bg-[#e2f2d9] text-[#2f7d5b] shadow-sm" : "text-stone-600 hover:bg-white/70"
+            activeTab === "people" ? "bg-[#e7f3e7] text-[#176b4d]" : "text-stone-600 hover:bg-[#f5f8f2]"
           }`}
         >
           <UsersRound className="h-4 w-4 shrink-0" />
@@ -226,7 +226,7 @@ export default async function EmployeesPage({
         <a
           href={buildEmployeesHref({ tab: "attendance" })}
           className={`flex min-w-0 items-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-semibold transition ${
-            activeTab === "attendance" ? "bg-[#fff1cf] text-[#9a5b05] shadow-sm" : "text-stone-600 hover:bg-white/70"
+            activeTab === "attendance" ? "bg-amber-50 text-amber-700" : "text-stone-600 hover:bg-[#f5f8f2]"
           }`}
         >
           <CalendarDays className="h-4 w-4 shrink-0" />

@@ -43,7 +43,7 @@ function initials(name: string) {
 
 function AttendanceAvatar({ employee }: { employee: Pick<AttendanceChecklistItem, "fullName" | "photoDataUrl"> }) {
   return (
-    <span className="inline-grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-xl border border-white/80 bg-[linear-gradient(135deg,#e6f1ed_0%,#edf3fa_100%)] text-xs font-semibold text-[#678c84] shadow-sm sm:h-10 sm:w-10 sm:rounded-2xl">
+    <span className="inline-grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-xl border border-[#d7e5d1] bg-[#eef4ea] text-xs font-semibold text-[#547466] shadow-sm sm:h-10 sm:w-10">
       {employee.photoDataUrl ? <img src={employee.photoDataUrl} alt="" className="h-full w-full object-cover" /> : initials(employee.fullName)}
     </span>
   );
@@ -73,7 +73,11 @@ export function AttendanceChecklist({
   const isReadOnly = noWorkDay || (hasSavedAttendance && !isEditing);
   const isSelectedDateToday = dateValue === shiftDateValue(new Date().toISOString().slice(0, 10), 0);
   const dateScopeLabel = isSelectedDateToday ? "Today's" : "Selected Date";
-  const submitLabel = isReadOnly ? `Edit ${dateScopeLabel} Attendance` : `Save ${dateScopeLabel} Attendance`;
+  const submitLabel = isReadOnly
+    ? `Edit ${dateScopeLabel} Attendance`
+    : hasSavedAttendance || isEditing
+      ? `Save ${dateScopeLabel} Attendance`
+      : "Save Exceptions";
   const previousDateValue = shiftDateValue(dateValue, -1);
   const nextDateValue = shiftDateValue(dateValue, 1);
   const getStatusBadge = (status: AttendanceChecklistItem["status"]) =>
@@ -111,7 +115,7 @@ export function AttendanceChecklist({
         <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-stretch gap-1.5 sm:gap-2">
           <Link
             href={`${redirectTo}?date=${previousDateValue}`}
-            className="grid w-9 place-items-center rounded-2xl border border-[rgba(88,150,88,0.34)] bg-[rgba(250,255,247,0.96)] text-[#2f7d5b] shadow-[0_12px_26px_-22px_rgba(22,78,43,0.22)] transition hover:bg-[#edf8e9] sm:w-10"
+            className="grid w-9 place-items-center rounded-xl border border-[rgba(121,150,118,0.28)] bg-white text-[#176b4d] shadow-sm transition hover:bg-[#f1f6ee] sm:w-10"
             aria-label="Previous date"
             title="Previous date"
           >
@@ -120,7 +124,7 @@ export function AttendanceChecklist({
 
           <div className="attendance-strip min-w-0 overflow-x-auto">
             <div className="min-w-[620px] sm:min-w-[780px]">
-              <div className="overflow-hidden rounded-[18px] border border-[rgba(88,150,88,0.34)] bg-[rgba(250,255,247,0.96)] shadow-[0_14px_30px_-26px_rgba(22,78,43,0.18)] sm:rounded-[24px]">
+              <div className="overflow-hidden rounded-2xl border border-[rgba(121,150,118,0.28)] bg-white shadow-sm">
                 <div className="grid grid-cols-7">
                   {dateSnapshots.map((snapshot) => (
                     <Link
@@ -132,7 +136,7 @@ export function AttendanceChecklist({
                             ? "bg-[#f3e7d3] text-[#5c4221]"
                             : "bg-[#faf4e8] text-[#6b5a44] hover:bg-[#f4ead8]"
                           : snapshot.active
-                          ? "bg-[linear-gradient(180deg,#b7efb4_0%,#80cf89_100%)] text-[#123524]"
+                          ? "bg-[#dff0dc] text-[#123524]"
                           : snapshot.today
                             ? "bg-[#fff1cf] text-[#61420a] hover:bg-[#ffe6a8]"
                             : "bg-[rgba(250,255,247,0.9)] text-[#45624f] hover:bg-[rgba(232,248,226,0.96)]"
@@ -153,7 +157,7 @@ export function AttendanceChecklist({
 
           <Link
             href={`${redirectTo}?date=${nextDateValue}`}
-            className="grid w-9 place-items-center rounded-2xl border border-[rgba(88,150,88,0.34)] bg-[rgba(250,255,247,0.96)] text-[#2f7d5b] shadow-[0_12px_26px_-22px_rgba(22,78,43,0.22)] transition hover:bg-[#edf8e9] sm:w-10"
+            className="grid w-9 place-items-center rounded-xl border border-[rgba(121,150,118,0.28)] bg-white text-[#176b4d] shadow-sm transition hover:bg-[#f1f6ee] sm:w-10"
             aria-label="Next date"
             title="Next date"
           >
@@ -242,7 +246,7 @@ export function AttendanceChecklist({
                         </label>
                       </div>
                       <div className="mt-2 hidden text-right text-[11px] text-stone-500 sm:block">
-                        One status only per employee. Default is present.
+                        Leave as present unless there is an exception.
                       </div>
                       <details className="note-toggle group mt-2 w-full sm:mt-3" open={Boolean(employee.remarks)}>
                         <summary className="flex h-9 cursor-pointer list-none items-center justify-center gap-2 rounded-xl border border-stone-300 bg-stone-50 px-2 text-xs font-medium text-stone-700 transition hover:border-stone-400 hover:bg-white sm:h-11 sm:rounded-2xl sm:px-3 sm:py-2.5 sm:text-sm">

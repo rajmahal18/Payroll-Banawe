@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { Prisma, DeductionType, EmployeeStatus, LedgerStatus, PayrollFrequency, PayrollPeriodStatus } from "@prisma/client";
 import { login as doLogin, register as doRegister, requireUser, logout } from "@/lib/auth";
-import { getCoveredDaysForPayroll, getEffectivePayrollStart, getLivePayrollAttendanceMetrics } from "@/lib/payroll-live";
+import { getLivePayrollAttendanceMetrics } from "@/lib/payroll-live";
 import { prisma } from "@/lib/prisma";
 import { endOfDayLocal, formatDate, parseDateInputValue, startOfDayLocal, toDateInputValue } from "@/lib/utils";
 import { getPayDateForDate, getPeriodForPayDate } from "@/lib/payroll";
@@ -65,6 +65,28 @@ type AdvanceDeductionSnapshot = {
   advanceDate: Date;
   advanceReason: string | null;
 };
+
+type PayrollAuditEventInput = {
+  shopId: string;
+  payrollPeriodId?: string | null;
+  employeeId?: string | null;
+  userId?: string | null;
+  eventType: string;
+  reason?: string | null;
+  metadata?: Prisma.InputJsonValue;
+};
+
+function payrollAuditEventData(event: PayrollAuditEventInput) {
+  return {
+    shopId: event.shopId,
+    payrollPeriodId: event.payrollPeriodId ?? null,
+    employeeId: event.employeeId ?? null,
+    userId: event.userId ?? null,
+    eventType: event.eventType,
+    reason: event.reason ?? null,
+    metadata: event.metadata ?? Prisma.JsonNull
+  };
+}
 
 function formatPeriodLabel(periodStart: Date, periodEnd: Date, payDate: Date) {
   if (toDateInputValue(periodStart) === toDateInputValue(periodEnd)) {
@@ -178,6 +200,17 @@ async function requireShopEmployee(shopId: string, employeeId: string) {
 
 function isSameDateValue(left: Date, right: Date) {
   return toDateInputValue(left) === toDateInputValue(right);
+}
+
+function shiftCalendarDays(date: Date, amount: number) {
+  return startOfDayLocal(new Date(date.getTime() + amount * 24 * 60 * 60 * 1000));
+}
+
+function latestDate(...dates: Array<Date | null | undefined>) {
+  return dates.reduce<Date | null>((latest, date) => {
+    if (!date) return latest;
+    return !latest || date > latest ? date : latest;
+  }, null);
 }
 
 function optionalEmployeePhoto(value: FormDataEntryValue | null) {
@@ -349,13 +382,50 @@ async function ensurePayrollPeriodsForDate({
 
   await prisma.$transaction(async (tx) => {
     const employees = await tx.employee.findMany({ where: { shopId, status: EmployeeStatus.ACTIVE } });
+    const employeeIds = employees.map((employee) => employee.id);
+    const existingEntries = employeeIds.length
+      ? await tx.payrollEntry.findMany({
+          where: {
+            employeeId: { in: employeeIds },
+            payrollPeriod: { shopId }
+          },
+          select: {
+            employeeId: true,
+            payrollPeriod: {
+              select: {
+                status: true,
+                payDate: true
+              }
+            }
+          }
+        })
+      : [];
+    const employeesWithOpenPayroll = new Set(
+      existingEntries
+        .filter((entry) => entry.payrollPeriod.status !== PayrollPeriodStatus.PAID)
+        .map((entry) => entry.employeeId)
+    );
+    const latestPaidDateByEmployee = new Map<string, Date>();
+    existingEntries.forEach((entry) => {
+      if (entry.payrollPeriod.status !== PayrollPeriodStatus.PAID) return;
+
+      const current = latestPaidDateByEmployee.get(entry.employeeId);
+      if (!current || entry.payrollPeriod.payDate > current) {
+        latestPaidDateByEmployee.set(entry.employeeId, entry.payrollPeriod.payDate);
+      }
+    });
     const dueEmployees = employees
       .map((employee) => {
-        const computedPayDate = getPayDateForDate(targetDate, employee, workCalendar);
+        if (employeesWithOpenPayroll.has(employee.id)) return null;
+
+        const latestPersistedPaidDate = latestPaidDateByEmployee.get(employee.id) ?? null;
+        const effectiveLastPaidDate = latestDate(employee.lastPaidDate, latestPersistedPaidDate);
+        const employeeSchedule = { ...employee, lastPaidDate: effectiveLastPaidDate };
+        const computedPayDate = getPayDateForDate(targetDate, employeeSchedule, workCalendar);
         const isDue = toDateInputValue(computedPayDate) === toDateInputValue(targetDate);
         if (!isDue) return null;
-        const period = getPeriodForPayDate(targetDate, employee, workCalendar);
-        return { employee, period };
+        const period = getPeriodForPayDate(targetDate, employeeSchedule, workCalendar);
+        return { employee: employeeSchedule, period };
       })
       .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
@@ -409,28 +479,23 @@ async function ensurePayrollPeriodsForDate({
         continue;
       }
 
-      const coveredDays = getCoveredDaysForPayroll(period.periodStart, period.periodEnd, employee.startDate, workCalendar);
-      const effectiveAttendanceStart = getEffectivePayrollStart(period.periodStart, employee.startDate);
-
-      const attendance =
-        coveredDays === 0
-          ? []
-          : await tx.attendanceRecord.findMany({
-              where: {
-                employeeId: employee.id,
-                date: {
-                  gte: effectiveAttendanceStart,
-                  lte: endOfDayLocal(period.periodEnd)
-                }
-              }
-            });
-
-      const payableAttendance = attendance.filter((item) => isWorkDate(item.date, workCalendar));
-      const daysAbsent = payableAttendance.filter((item) => item.status === "ABSENT").length;
-      const daysHalf = payableAttendance.filter((item) => String(item.status) === "HALF_DAY").length;
-      const daysPresent = Math.max(coveredDays - daysAbsent - daysHalf, 0);
-      const paidDayUnits = new Prisma.Decimal(daysPresent).plus(new Prisma.Decimal(daysHalf).mul(0.5));
-      const grossPay = paidDayUnits.mul(employee.dailyRate);
+      const attendance = await tx.attendanceRecord.findMany({
+        where: {
+          employeeId: employee.id,
+          date: {
+            gte: startOfDayLocal(period.periodStart),
+            lte: endOfDayLocal(period.periodEnd)
+          }
+        }
+      });
+      const liveMetrics = getLivePayrollAttendanceMetrics({
+        employee,
+        periodStart: period.periodStart,
+        periodEnd: period.periodEnd,
+        attendanceRecords: attendance,
+        calendar: workCalendar
+      });
+      const grossPay = new Prisma.Decimal(liveMetrics.grossPay);
       const bonuses = await tx.bonus.findMany({
         where: {
           employeeId: employee.id,
@@ -531,9 +596,9 @@ async function ensurePayrollPeriodsForDate({
         data: {
           payrollPeriodId: payrollPeriod.id,
           employeeId: employee.id,
-          daysPresent,
-          daysHalf,
-          daysAbsent,
+          daysPresent: liveMetrics.daysPresent,
+          daysHalf: liveMetrics.daysHalf,
+          daysAbsent: liveMetrics.daysAbsent,
           grossPay,
           totalBonusesAdded: bonusTotal,
           totalAdvancesDeducted: deductedAdvanceTotal,
@@ -970,33 +1035,61 @@ export async function updateAdvanceAction(formData: FormData) {
     status: formData.get("status")
   });
 
-  const employee = await requireShopEmployee(user.shop.id, parsed.employeeId);
   const existing = await prisma.advance.findFirstOrThrow({
     where: {
       id: parsed.advanceId,
       employee: { shopId: user.shop.id }
     }
   });
+  const deductionCount = await prisma.advanceDeduction.count({
+    where: { advanceId: existing.id }
+  });
+  const employee = deductionCount > 0 ? { id: existing.employeeId } : await requireShopEmployee(user.shop.id, parsed.employeeId);
 
-  const nextAmount = new Prisma.Decimal(parsed.amount);
+  const requestedAmount = new Prisma.Decimal(parsed.amount);
+  const nextAmount =
+    deductionCount > 0 && requestedAmount.lessThan(existing.deductedAmount) ? existing.deductedAmount : requestedAmount;
   const deductedAmount = existing.deductedAmount.greaterThan(nextAmount) ? nextAmount : existing.deductedAmount;
   const remainingBalance = parsed.status === LedgerStatus.CANCELLED ? new Prisma.Decimal(0) : nextAmount.minus(deductedAmount);
   const nextStatus = parsed.status === LedgerStatus.CANCELLED ? LedgerStatus.CANCELLED : remainingBalance.equals(0) ? LedgerStatus.CLOSED : parsed.status;
 
-  await prisma.advance.update({
-    where: { id: existing.id },
-    data: {
-      employeeId: employee.id,
-      date: parseDateInputValue(parsed.date),
-      amount: nextAmount,
-      deductionPerPayroll:
-        parsed.deductionPerPayroll === "" || parsed.deductionPerPayroll == null
-          ? null
-          : new Prisma.Decimal(parsed.deductionPerPayroll),
-      deductedAmount,
-      remainingBalance,
-      reason: parsed.reason || null,
-      status: nextStatus
+  await prisma.$transaction(async (tx) => {
+    await tx.advance.update({
+      where: { id: existing.id },
+      data: {
+        employeeId: employee.id,
+        date: deductionCount > 0 ? existing.date : parseDateInputValue(parsed.date),
+        amount: nextAmount,
+        deductionPerPayroll:
+          parsed.deductionPerPayroll === "" || parsed.deductionPerPayroll == null
+            ? null
+            : new Prisma.Decimal(parsed.deductionPerPayroll),
+        deductedAmount,
+        remainingBalance,
+        reason: parsed.reason || null,
+        status: nextStatus
+      }
+    });
+
+    if (deductionCount > 0) {
+      await tx.payrollAuditEvent.create({
+        data: payrollAuditEventData({
+          shopId: user.shop.id,
+          employeeId: existing.employeeId,
+          userId: user.id,
+          eventType: "ADVANCE_WITH_HISTORY_UPDATED",
+          reason: "Advance edit preserved employee, date, and deducted balance because payroll deductions already exist.",
+          metadata: {
+            advanceId: existing.id,
+            deductionCount,
+            requestedEmployeeId: parsed.employeeId,
+            requestedDate: parsed.date,
+            requestedAmount: parsed.amount,
+            savedAmount: nextAmount.toString(),
+            status: nextStatus
+          }
+        })
+      });
     }
   });
 
@@ -1018,7 +1111,38 @@ export async function deleteAdvanceAction(formData: FormData) {
     }
   });
 
-  await prisma.advance.delete({ where: { id: existing.id } });
+  const deductionCount = await prisma.advanceDeduction.count({
+    where: { advanceId: existing.id }
+  });
+
+  if (deductionCount > 0 || existing.deductedAmount.greaterThan(0)) {
+    await prisma.$transaction(async (tx) => {
+      await tx.advance.update({
+        where: { id: existing.id },
+        data: {
+          remainingBalance: new Prisma.Decimal(0),
+          status: LedgerStatus.CANCELLED
+        }
+      });
+
+      await tx.payrollAuditEvent.create({
+        data: payrollAuditEventData({
+          shopId: user.shop.id,
+          employeeId: existing.employeeId,
+          userId: user.id,
+          eventType: "ADVANCE_DELETE_BLOCKED_CANCELLED",
+          reason: "Advance had deduction history, so it was cancelled instead of deleted.",
+          metadata: {
+            advanceId: existing.id,
+            deductedAmount: existing.deductedAmount.toString(),
+            deductionCount
+          }
+        })
+      });
+    });
+  } else {
+    await prisma.advance.delete({ where: { id: existing.id } });
+  }
 
   revalidatePath("/advances");
   revalidatePath("/bonuses");
@@ -1428,7 +1552,18 @@ export async function finalizePayrollAction(formData: FormData) {
   const workCalendar = await getShopWorkCalendar(user.shop.id);
   await prisma.$transaction((tx) => syncOpenPayrollEntriesWithWorkCalendar(tx, [payrollPeriod], workCalendar));
 
-  await prisma.payrollPeriod.update({ where: { id: payrollPeriodId }, data: { status: PayrollPeriodStatus.FINALIZED } });
+  await prisma.$transaction(async (tx) => {
+    await tx.payrollPeriod.update({ where: { id: payrollPeriodId }, data: { status: PayrollPeriodStatus.FINALIZED } });
+    await tx.payrollAuditEvent.create({
+      data: payrollAuditEventData({
+        shopId: user.shop.id,
+        payrollPeriodId,
+        userId: user.id,
+        eventType: "PAYROLL_FINALIZED",
+        reason: "Payroll finalized for review."
+      })
+    });
+  });
   revalidatePath("/payroll");
 }
 
@@ -1543,6 +1678,22 @@ export async function markPayrollPaidForDateAction(formData: FormData) {
       )
   );
 
+  await prisma.payrollAuditEvent.createMany({
+    data: payablePeriods.map((period) =>
+      payrollAuditEventData({
+        shopId: user.shop.id,
+        payrollPeriodId: period.id,
+        userId: user.id,
+        eventType: "PAYROLL_MARKED_PAID",
+        reason: "Marked paid from payroll timeline.",
+        metadata: {
+          payDate: toDateInputValue(period.payDate),
+          employeeCount: period.payrollEntries.length
+        }
+      })
+    )
+  });
+
   revalidatePath("/dashboard");
   revalidatePath("/employees");
   revalidatePath("/payroll");
@@ -1577,29 +1728,72 @@ export async function markPayrollHistoryPaidAction(formData: FormData) {
 
     if (!employees.length) return null;
 
-    const upserted = await tx.payrollPeriod.upsert({
+    const candidatePeriods = await tx.payrollPeriod.findMany({
       where: {
-        shopId_periodStart_periodEnd: {
-          shopId: user.shop.id,
-          periodStart,
-          periodEnd
+        shopId: user.shop.id,
+        payDate: {
+          gte: shiftCalendarDays(payDate, -2),
+          lte: shiftCalendarDays(payDate, 2)
         }
       },
-      update: {
-        payDate,
-        label: `Payroll - ${formatPeriodLabel(periodStart, periodEnd, payDate)}`
-      },
-      create: {
-        shopId: user.shop.id,
-        label: `Payroll - ${formatPeriodLabel(periodStart, periodEnd, payDate)}`,
-        periodStart,
-        periodEnd,
-        payDate,
-        status: PayrollPeriodStatus.DRAFT
+      select: {
+        id: true,
+        periodStart: true,
+        periodEnd: true,
+        payDate: true
       }
     });
+    const existingPeriodByBusinessDate = candidatePeriods.find(
+      (period) =>
+        isSameDateValue(period.periodStart, periodStart) &&
+        isSameDateValue(period.periodEnd, periodEnd) &&
+        isSameDateValue(period.payDate, payDate)
+    );
+    const upserted = existingPeriodByBusinessDate
+      ? await tx.payrollPeriod.update({
+          where: { id: existingPeriodByBusinessDate.id },
+          data: {
+            payDate,
+            label: `Payroll - ${formatPeriodLabel(periodStart, periodEnd, payDate)}`
+          }
+        })
+      : await tx.payrollPeriod.upsert({
+          where: {
+            shopId_periodStart_periodEnd: {
+              shopId: user.shop.id,
+              periodStart,
+              periodEnd
+            }
+          },
+          update: {
+            payDate,
+            label: `Payroll - ${formatPeriodLabel(periodStart, periodEnd, payDate)}`
+          },
+          create: {
+            shopId: user.shop.id,
+            label: `Payroll - ${formatPeriodLabel(periodStart, periodEnd, payDate)}`,
+            periodStart,
+            periodEnd,
+            payDate,
+            status: PayrollPeriodStatus.DRAFT
+          }
+        });
 
     for (const employee of employees) {
+      const blockingOpenEntry = await tx.payrollEntry.findFirst({
+        where: {
+          employeeId: employee.id,
+          payrollPeriod: {
+            shopId: user.shop.id,
+            status: { not: PayrollPeriodStatus.PAID },
+            id: { not: upserted.id }
+          }
+        },
+        select: { id: true }
+      });
+
+      if (blockingOpenEntry) continue;
+
       const existingEntry = await tx.payrollEntry.findUnique({
         where: {
           payrollPeriodId_employeeId: {
@@ -1611,26 +1805,23 @@ export async function markPayrollHistoryPaidAction(formData: FormData) {
 
       if (existingEntry) continue;
 
-      const coveredDays = getCoveredDaysForPayroll(periodStart, periodEnd, employee.startDate, workCalendar);
-      const effectiveAttendanceStart = getEffectivePayrollStart(periodStart, employee.startDate);
-      const attendance =
-        coveredDays === 0
-          ? []
-          : await tx.attendanceRecord.findMany({
-              where: {
-                employeeId: employee.id,
-                date: {
-                  gte: effectiveAttendanceStart,
-                  lte: endOfDayLocal(periodEnd)
-                }
-              }
-            });
-      const payableAttendance = attendance.filter((item) => isWorkDate(item.date, workCalendar));
-      const daysAbsent = payableAttendance.filter((item) => item.status === "ABSENT").length;
-      const daysHalf = payableAttendance.filter((item) => String(item.status) === "HALF_DAY").length;
-      const daysPresent = Math.max(coveredDays - daysAbsent - daysHalf, 0);
-      const paidDayUnits = new Prisma.Decimal(daysPresent).plus(new Prisma.Decimal(daysHalf).mul(0.5));
-      const grossPay = paidDayUnits.mul(employee.dailyRate);
+      const attendance = await tx.attendanceRecord.findMany({
+        where: {
+          employeeId: employee.id,
+          date: {
+            gte: startOfDayLocal(periodStart),
+            lte: endOfDayLocal(periodEnd)
+          }
+        }
+      });
+      const liveMetrics = getLivePayrollAttendanceMetrics({
+        employee,
+        periodStart,
+        periodEnd,
+        attendanceRecords: attendance,
+        calendar: workCalendar
+      });
+      const grossPay = new Prisma.Decimal(liveMetrics.grossPay);
       const bonuses = await tx.bonus.findMany({
         where: {
           employeeId: employee.id,
@@ -1727,9 +1918,9 @@ export async function markPayrollHistoryPaidAction(formData: FormData) {
         data: {
           payrollPeriodId: upserted.id,
           employeeId: employee.id,
-          daysPresent,
-          daysHalf,
-          daysAbsent,
+          daysPresent: liveMetrics.daysPresent,
+          daysHalf: liveMetrics.daysHalf,
+          daysAbsent: liveMetrics.daysAbsent,
           grossPay,
           totalBonusesAdded: bonusTotal,
           totalAdvancesDeducted: deductedAdvanceTotal,
@@ -1748,23 +1939,46 @@ export async function markPayrollHistoryPaidAction(formData: FormData) {
       }
     }
 
+    const periodEntries = await tx.payrollEntry.findMany({
+      where: { payrollPeriodId: upserted.id },
+      select: { employeeId: true }
+    });
+
+    if (!periodEntries.length) {
+      return null;
+    }
+
     await tx.payrollPeriod.update({
       where: { id: upserted.id },
       data: { status: PayrollPeriodStatus.PAID }
     });
 
+    await tx.payrollAuditEvent.create({
+      data: payrollAuditEventData({
+        shopId: user.shop.id,
+        payrollPeriodId: upserted.id,
+        userId: user.id,
+        eventType: "PAYROLL_MARKED_PAID",
+        reason: "Marked paid from payment history.",
+        metadata: {
+          payDate: toDateInputValue(payDate),
+          employeeCount: periodEntries.length
+        }
+      })
+    });
+
+    const employeesById = new Map(employees.map((employee) => [employee.id, employee]));
     await Promise.all(
-      employees.map((employee) =>
-        tx.employee.update({
-          where: { id: employee.id },
+      periodEntries.map((entry) => {
+        const employee = employeesById.get(entry.employeeId);
+
+        return tx.employee.update({
+          where: { id: entry.employeeId },
           data: {
-            lastPaidDate:
-              !employee.lastPaidDate || startOfDayLocal(employee.lastPaidDate) < payDate
-                ? payDate
-                : employee.lastPaidDate
+            lastPaidDate: latestDate(employee?.lastPaidDate, payDate)
           }
-        })
-      )
+        });
+      })
     );
 
     return upserted;
@@ -1779,4 +1993,175 @@ export async function markPayrollHistoryPaidAction(formData: FormData) {
   revalidatePath("/employees");
   revalidatePath("/payroll");
   redirect("/payroll?tab=history&paid=1");
+}
+
+export async function updatePayrollEntryAdjustmentsAction(formData: FormData) {
+  const user = await requireUser();
+  const schema = z.object({
+    payrollEntryId: z.string().min(1),
+    bonusesAdded: moneySchema,
+    otherDeductions: moneySchema,
+    reason: z.string().trim().max(300).optional()
+  });
+
+  const parsed = schema.parse({
+    payrollEntryId: formData.get("payrollEntryId"),
+    bonusesAdded: formData.get("bonusesAdded"),
+    otherDeductions: formData.get("otherDeductions"),
+    reason: formData.get("reason")
+  });
+
+  const entry = await prisma.payrollEntry.findFirstOrThrow({
+    where: {
+      id: parsed.payrollEntryId,
+      payrollPeriod: {
+        shopId: user.shop.id,
+        status: { not: PayrollPeriodStatus.PAID }
+      }
+    },
+    include: {
+      employee: {
+        select: {
+          id: true,
+          fullName: true
+        }
+      },
+      payrollPeriod: {
+        select: {
+          id: true,
+          payDate: true,
+          status: true
+        }
+      }
+    }
+  });
+
+  const bonusesAdded = new Prisma.Decimal(parsed.bonusesAdded);
+  const requestedOtherDeductions = new Prisma.Decimal(parsed.otherDeductions);
+  const amountAvailableForOtherDeductions = entry.grossPay.plus(bonusesAdded).minus(entry.totalAdvancesDeducted);
+  const cappedAvailable = amountAvailableForOtherDeductions.isNegative()
+    ? new Prisma.Decimal(0)
+    : amountAvailableForOtherDeductions;
+  const otherDeductions = requestedOtherDeductions.greaterThan(cappedAvailable)
+    ? cappedAvailable
+    : requestedOtherDeductions;
+  const netPay = cappedAvailable.minus(otherDeductions);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.payrollEntry.update({
+      where: { id: entry.id },
+      data: {
+        totalBonusesAdded: bonusesAdded,
+        totalPayablesDeducted: otherDeductions,
+        netPay
+      }
+    });
+
+    await tx.payrollAuditEvent.create({
+      data: payrollAuditEventData({
+        shopId: user.shop.id,
+        payrollPeriodId: entry.payrollPeriod.id,
+        employeeId: entry.employee.id,
+        userId: user.id,
+        eventType: "PAYROLL_ADJUSTMENTS_UPDATED",
+        reason: parsed.reason || "Edited payroll additions and other deductions.",
+        metadata: {
+          payrollEntryId: entry.id,
+          employeeName: entry.employee.fullName,
+          payDate: toDateInputValue(entry.payrollPeriod.payDate),
+          bonusesAdded: bonusesAdded.toString(),
+          requestedOtherDeductions: requestedOtherDeductions.toString(),
+          savedOtherDeductions: otherDeductions.toString(),
+          advanceDeductions: entry.totalAdvancesDeducted.toString(),
+          netPay: netPay.toString()
+        }
+      })
+    });
+  });
+
+  revalidatePath("/dashboard");
+  revalidatePath("/employees");
+  revalidatePath("/payroll");
+  redirect("/payroll?tab=history&adjusted=1");
+}
+
+export async function undoPayrollHistoryPaidAction(formData: FormData) {
+  const user = await requireUser();
+  const payrollPeriodId = z.string().min(1).parse(formData.get("payrollPeriodId"));
+  const reason = optionalFormString(formData.get("reason")) || "Reopened from payment history.";
+
+  const payrollPeriod = await prisma.payrollPeriod.findFirstOrThrow({
+    where: {
+      id: payrollPeriodId,
+      shopId: user.shop.id,
+      status: PayrollPeriodStatus.PAID
+    },
+    include: {
+      payrollEntries: {
+        select: {
+          employeeId: true
+        }
+      }
+    }
+  });
+  const employeeIds = Array.from(new Set(payrollPeriod.payrollEntries.map((entry) => entry.employeeId)));
+
+  await prisma.$transaction(async (tx) => {
+    await tx.payrollPeriod.update({
+      where: { id: payrollPeriod.id },
+      data: { status: PayrollPeriodStatus.FINALIZED }
+    });
+
+    await tx.payrollAuditEvent.create({
+      data: payrollAuditEventData({
+        shopId: user.shop.id,
+        payrollPeriodId: payrollPeriod.id,
+        userId: user.id,
+        eventType: "PAYROLL_REOPENED",
+        reason,
+        metadata: {
+          previousStatus: PayrollPeriodStatus.PAID,
+          nextStatus: PayrollPeriodStatus.FINALIZED,
+          payDate: toDateInputValue(payrollPeriod.payDate),
+          employeeCount: employeeIds.length
+        }
+      })
+    });
+
+    for (const employeeId of employeeIds) {
+      const latestPaidEntry = await tx.payrollEntry.findFirst({
+        where: {
+          employeeId,
+          payrollPeriod: {
+            shopId: user.shop.id,
+            status: PayrollPeriodStatus.PAID
+          }
+        },
+        select: {
+          payrollPeriod: {
+            select: {
+              payDate: true
+            }
+          }
+        },
+        orderBy: {
+          payrollPeriod: {
+            payDate: "desc"
+          }
+        }
+      });
+
+      await tx.employee.update({
+        where: { id: employeeId },
+        data: {
+          lastPaidDate: latestPaidEntry?.payrollPeriod.payDate ?? null
+        }
+      });
+    }
+  });
+
+  revalidatePath("/dashboard");
+  revalidatePath("/employees");
+  revalidatePath("/payroll");
+  redirect("/payroll?tab=history&undo=1");
 }

@@ -31,7 +31,7 @@ export function EmployeeCreateModal() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#2f7d5b] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_14px_28px_-18px_rgba(111,156,144,0.32)] transition hover:bg-[#25684b] sm:w-auto"
+        className="primary-action w-full sm:w-auto"
       >
         <UserPlus className="h-4 w-4" />
         Add Employee
@@ -40,7 +40,7 @@ export function EmployeeCreateModal() {
       {mounted && open
         ? createPortal(
             <div className="fixed inset-0 z-[120] flex items-end justify-center bg-[rgba(52,47,43,0.34)] p-3 sm:items-center sm:p-6">
-              <div className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-[28px] border border-[rgba(88,150,88,0.36)] bg-[rgba(250,255,247,0.98)] shadow-[0_28px_60px_-30px_rgba(22,78,43,0.24)] sm:max-h-[calc(100vh-3rem)]">
+              <div className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-[rgba(121,150,118,0.28)] bg-white shadow-xl shadow-stone-900/10 sm:max-h-[calc(100vh-3rem)]">
                 <div className="flex items-start justify-between gap-4 border-b border-[rgba(226,219,211,0.82)] px-5 py-3.5">
                   <div>
                     <h2 className="text-lg font-semibold text-stone-950">Add Employee</h2>

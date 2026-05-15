@@ -653,7 +653,15 @@ export function EmployeeCardGrid({ employees }: { employees: EmployeeCardItem[] 
 
   return (
     <>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <section className="panel overflow-visible">
+        <div className="hidden grid-cols-[minmax(0,1.3fr)_150px_170px_140px_52px] gap-3 border-b border-[rgba(121,150,118,0.22)] bg-[#f8fbf6] px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#66746a] lg:grid">
+          <div>Employee</div>
+          <div>Daily Rate</div>
+          <div>Payroll</div>
+          <div>Open Advances</div>
+          <div></div>
+        </div>
+        <div className="divide-y divide-[rgba(121,150,118,0.18)]">
         {employees.map((employee) => (
           <article
             key={employee.id}
@@ -666,53 +674,67 @@ export function EmployeeCardGrid({ employees }: { employees: EmployeeCardItem[] 
                 setViewEmployee(employee);
               }
             }}
-            className={`relative cursor-pointer rounded-[28px] border border-[rgba(232,191,115,0.62)] bg-[linear-gradient(135deg,rgba(250,238,224,0.78)_0%,rgba(245,250,247,0.94)_58%,rgba(255,255,255,0.98)_100%)] p-5 shadow-[0_18px_42px_-30px_rgba(108,89,70,0.16)] transition hover:-translate-y-0.5 hover:shadow-[0_22px_48px_-34px_rgba(108,89,70,0.24)] focus:outline-none focus:ring-4 focus:ring-[rgba(111,156,144,0.22)] ${
+            className={`relative cursor-pointer bg-white px-4 py-3 transition hover:bg-[#f8fbf6] focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[rgba(23,107,77,0.16)] ${
               menuOpenFor === employee.id ? "z-30 overflow-visible" : "overflow-hidden"
             }`}
           >
-            <div className="absolute left-0 top-4 h-[78%] w-1.5 rounded-r-full bg-[linear-gradient(180deg,#f0b24b_0%,#f5c36d_100%)]" />
-            <div className="absolute inset-x-0 top-0 h-24 bg-[radial-gradient(circle_at_top_left,rgba(214,233,227,0.58),rgba(255,255,255,0)_58%),radial-gradient(circle_at_top_right,rgba(245,221,198,0.42),rgba(255,255,255,0)_50%)]" />
-            <div className="relative">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-4">
-                  <EmployeeAvatar employee={employee} size="lg" />
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1.3fr)_150px_170px_140px_52px] lg:items-center">
+                <div className="flex min-w-0 items-center gap-3">
+                  <EmployeeAvatar employee={employee} />
                   <div className="min-w-0">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8a7f73]">{employee.employeeCode}</div>
-                    <h2 className="mt-1 truncate text-xl font-semibold tracking-[-0.03em] text-stone-950">{employee.fullName}</h2>
-                    <div className="mt-2 inline-flex rounded-full border border-[rgba(232,191,115,0.8)] bg-[rgba(255,248,234,0.94)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#b17d1f]">
-                      {employee.position || "Team Member"}
-                    </div>
-                    <div className="mt-2">
-                      <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${employee.status === "ACTIVE" ? "bg-[#e6f1ed] text-[#5f9f91]" : "bg-stone-100 text-stone-600"}`}>
-                        {employee.status === "ACTIVE" ? "Active Employee" : "Inactive Employee"}
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <h2 className="truncate text-base font-semibold text-stone-950">{employee.fullName}</h2>
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${employee.status === "ACTIVE" ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-600"}`}>
+                        {employee.status === "ACTIVE" ? "Active" : "Inactive"}
                       </span>
                     </div>
+                    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#66746a]">
+                      <span className="font-semibold uppercase tracking-[0.12em]">{employee.employeeCode}</span>
+                      <span>{employee.position || "Team Member"}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-sm lg:block">
+                  <div className="section-title lg:hidden">Daily Rate</div>
+                  <div className="font-semibold text-stone-950 lg:text-sm">{formatMoneyLabel(employee.dailyRate)}</div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-sm lg:block">
+                  <div className="section-title lg:hidden">Payroll</div>
+                  <div className="truncate text-stone-700">{describeEmployeePayrollSchedule(employee)}</div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-sm lg:block">
+                  <div className="section-title lg:hidden">Open Advances</div>
+                  <div className={Number(employee.remainingAdvanceBalance) > 0 ? "font-semibold text-amber-700" : "text-stone-500"}>
+                    {formatMoneyLabel(employee.remainingAdvanceBalance)}
                   </div>
                 </div>
 
                 <div
                   ref={menuOpenFor === employee.id ? menuRef : undefined}
-                  className="relative"
+                  className="relative justify-self-end"
                   onClick={(event) => event.stopPropagation()}
                 >
                   <button
                     type="button"
                     onClick={() => setMenuOpenFor((current) => (current === employee.id ? null : employee.id))}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[rgba(88,150,88,0.36)] bg-[rgba(255,255,255,0.9)] text-stone-500 transition hover:bg-white hover:text-stone-900"
+                    className="secondary-action h-10 w-10 p-0"
                     aria-label={`Open actions for ${employee.fullName}`}
                   >
                     <EllipsisVertical className="h-4 w-4" />
                   </button>
 
                   {menuOpenFor === employee.id ? (
-                    <div className="absolute right-0 top-12 z-20 w-48 rounded-[20px] border border-[rgba(88,150,88,0.36)] bg-[rgba(250,255,247,0.98)] p-2 shadow-[0_18px_36px_-24px_rgba(22,78,43,0.24)]">
+                    <div className="absolute right-0 top-12 z-20 w-48 rounded-xl border border-[rgba(121,150,118,0.28)] bg-white p-1.5 shadow-xl shadow-stone-900/10">
                       <button
                         type="button"
                         onClick={() => {
                           setViewEmployee(employee);
                           setMenuOpenFor(null);
                         }}
-                        className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium text-stone-700 transition hover:bg-[#edf8e9]"
+                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-stone-700 transition hover:bg-[#f1f6ee]"
                       >
                         <Eye className="h-4 w-4" />
                         View
@@ -723,7 +745,7 @@ export function EmployeeCardGrid({ employees }: { employees: EmployeeCardItem[] 
                           setEditingEmployee(employee);
                           setMenuOpenFor(null);
                         }}
-                        className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium text-stone-700 transition hover:bg-[#edf8e9]"
+                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-stone-700 transition hover:bg-[#f1f6ee]"
                       >
                         <Pencil className="h-4 w-4" />
                         Edit
@@ -734,7 +756,7 @@ export function EmployeeCardGrid({ employees }: { employees: EmployeeCardItem[] 
                           setTimelineEmployee(employee);
                           setMenuOpenFor(null);
                         }}
-                        className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium text-stone-700 transition hover:bg-[#edf8e9]"
+                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-stone-700 transition hover:bg-[#f1f6ee]"
                       >
                         <Clock3 className="h-4 w-4" />
                         View Timeline
@@ -742,7 +764,7 @@ export function EmployeeCardGrid({ employees }: { employees: EmployeeCardItem[] 
                       <form action={toggleEmployeeStatusAction}>
                         <input type="hidden" name="employeeId" value={employee.id} />
                         <input type="hidden" name="currentStatus" value={employee.status} />
-                        <button className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium text-stone-700 transition hover:bg-[#edf8e9]">
+                        <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-stone-700 transition hover:bg-[#f1f6ee]">
                           <Power className="h-4 w-4" />
                           {employee.status === "ACTIVE" ? "Deactivate" : "Activate"}
                         </button>
@@ -753,7 +775,7 @@ export function EmployeeCardGrid({ employees }: { employees: EmployeeCardItem[] 
                           setDeleteEmployee(employee);
                           setMenuOpenFor(null);
                         }}
-                        className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium text-rose-700 transition hover:bg-rose-50"
+                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-rose-700 transition hover:bg-rose-50"
                       >
                         <Trash2 className="h-4 w-4" />
                         Delete
@@ -761,11 +783,11 @@ export function EmployeeCardGrid({ employees }: { employees: EmployeeCardItem[] 
                     </div>
                   ) : null}
                 </div>
-              </div>
             </div>
           </article>
         ))}
-      </div>
+        </div>
+      </section>
 
       <EmployeeViewModal employee={viewEmployee} open={Boolean(viewEmployee)} onClose={() => setViewEmployee(null)} />
       <EmployeeEditModal employee={editingEmployee} open={Boolean(editingEmployee)} onClose={() => setEditingEmployee(null)} />

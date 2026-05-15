@@ -33,6 +33,13 @@ function addCalendarDays(date: Date, amount: number) {
   return parseDateInputValue(toDateInputValue(new Date(date.getTime() + amount * 24 * 60 * 60 * 1000)));
 }
 
+function latestDate(...dates: Array<Date | null | undefined>) {
+  return dates.reduce<Date | null>((latest, date) => {
+    if (!date) return latest;
+    return !latest || date > latest ? date : latest;
+  }, null);
+}
+
 function buildAttendanceCalendarDays({
   periodStart,
   periodEnd,
@@ -184,20 +191,6 @@ export default async function DashboardPage({
   const byEmployee = new Map(records.map((record) => [record.employeeId, record]));
   const hasSavedAttendance = records.length > 0;
   const isEditingAttendance = params.edit === "1";
-  const nextPayrollEvents = employees
-    .map((employee) => {
-      const baseDate = employee.startDate && startOfDayLocal(employee.startDate) > todayStart ? startOfDayLocal(employee.startDate) : todayStart;
-      const payDate = getPayDateForDate(baseDate, employee, workCalendar);
-      const period = getPeriodForPayDate(payDate, employee, workCalendar);
-
-      return {
-        employee,
-        payDate,
-        period
-      };
-    })
-    .sort((a, b) => a.payDate.getTime() - b.payDate.getTime());
-
   const existingTimelinePeriods = await prisma.payrollPeriod.findMany({
     where: {
       shopId: user.shop.id,
@@ -239,6 +232,40 @@ export default async function DashboardPage({
 
     return addBusinessDays(startOfDayLocal(period.payDate), maxRetentionDays) >= todayStart;
   });
+  const latestOpenPayDateByEmployee = new Map<string, Date>();
+  const latestPaidDateByEmployee = new Map<string, Date>();
+  existingTimelinePeriods.forEach((period) => {
+    period.payrollEntries.forEach((entry) => {
+      if (period.status === "PAID") {
+        const current = latestPaidDateByEmployee.get(entry.employeeId);
+        if (!current || period.payDate > current) {
+          latestPaidDateByEmployee.set(entry.employeeId, period.payDate);
+        }
+      } else {
+        const current = latestOpenPayDateByEmployee.get(entry.employeeId);
+        if (!current || period.payDate > current) {
+          latestOpenPayDateByEmployee.set(entry.employeeId, period.payDate);
+        }
+      }
+    });
+  });
+  const nextPayrollEvents = employees
+    .map((employee) => {
+      const latestPersistedPaidDate = latestPaidDateByEmployee.get(employee.id) ?? null;
+      const latestOpenPayDate = latestOpenPayDateByEmployee.get(employee.id) ?? null;
+      const effectiveScheduleAnchor = latestDate(employee.lastPaidDate, latestPersistedPaidDate, latestOpenPayDate);
+      const employeeSchedule = { ...employee, lastPaidDate: effectiveScheduleAnchor };
+      const baseDate = employee.startDate && startOfDayLocal(employee.startDate) > todayStart ? startOfDayLocal(employee.startDate) : todayStart;
+      const payDate = getPayDateForDate(baseDate, employeeSchedule, workCalendar);
+      const period = getPeriodForPayDate(payDate, employeeSchedule, workCalendar);
+
+      return {
+        employee: employeeSchedule,
+        payDate,
+        period
+      };
+    })
+    .sort((a, b) => a.payDate.getTime() - b.payDate.getTime());
   const timelineRangeStartCandidates = [
     nextPayrollEvents[0]?.period.periodStart,
     ...retainedTimelinePeriods.map((period) => period.periodStart)
@@ -713,7 +740,7 @@ export default async function DashboardPage({
       noWork
         ? "No work day"
         : dayRecords.length === 0
-        ? "Not yet saved"
+        ? "Auto present"
         : absentEmployees.length === 0 && halfDayEmployees.length === 0
           ? "Perfect attendance"
           : [
@@ -753,10 +780,10 @@ export default async function DashboardPage({
       <DashboardStatsStrip
         entries={[
           {
-            label: "Attendance Logged",
-            value: selectedIsWorkDay ? (hasSavedAttendance ? "Yes" : "No") : "No Work",
+            label: "Attendance Mode",
+            value: selectedIsWorkDay ? (hasSavedAttendance ? "Saved" : "Auto Present") : "No Work",
             icon: "attendance",
-            tone: selectedIsWorkDay ? (hasSavedAttendance ? "green" : "red") : "amber"
+            tone: selectedIsWorkDay ? "green" : "amber"
           },
           { label: "Active Employees", value: employeeCount, icon: "employees", tone: "blue" },
           { label: "Present", value: presentToday, icon: "present", tone: "green" },
@@ -766,7 +793,7 @@ export default async function DashboardPage({
       />
 
       {employeeCount === 0 ? (
-        <section className="mt-4 overflow-hidden rounded-[28px] border border-[rgba(232,191,115,0.54)] bg-[linear-gradient(135deg,rgba(250,238,224,0.84)_0%,rgba(245,250,247,0.96)_54%,rgba(255,255,255,0.98)_100%)] shadow-[0_22px_44px_-34px_rgba(108,89,70,0.18)]">
+        <section className="panel mt-4 overflow-hidden">
           <div className="grid gap-5 px-5 py-5 lg:grid-cols-[1.15fr_0.85fr] lg:px-6">
             <div>
               <div className="inline-flex rounded-full border border-[rgba(232,191,115,0.74)] bg-[rgba(255,248,234,0.96)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#ab781d]">
@@ -782,12 +809,12 @@ export default async function DashboardPage({
             </div>
 
             <div className="grid gap-3 self-start">
-              <div className="rounded-[22px] border border-[rgba(88,150,88,0.34)] bg-[rgba(250,255,247,0.92)] px-4 py-4 text-sm text-stone-700">
+              <div className="soft-strip px-4 py-4 text-sm text-stone-700">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">Step 1</div>
                 <div className="mt-1 font-semibold text-stone-950">Enter employee basics</div>
                 <div className="mt-1">Add the name, position, daily rate, and start date.</div>
               </div>
-              <div className="rounded-[22px] border border-[rgba(88,150,88,0.34)] bg-[rgba(250,255,247,0.92)] px-4 py-4 text-sm text-stone-700">
+              <div className="soft-strip px-4 py-4 text-sm text-stone-700">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f73]">Step 2</div>
                 <div className="mt-1 font-semibold text-stone-950">Save and continue daily tracking</div>
                 <div className="mt-1">The app will auto-generate the employee code for this shop and unlock attendance flow.</div>
@@ -805,7 +832,7 @@ export default async function DashboardPage({
               ? "No attendance needed. This date is marked as a no-work day."
               : hasSavedAttendance && !isEditingAttendance
               ? "Saved for this day. Edit only if something changed."
-              : "Everyone starts present. Mark only Absent or Half Day, then save."
+              : "No log still counts as present for payroll. Save only if someone is absent, half day, or needs a note."
           }
           dateValue={dateValue}
           redirectTo="/dashboard"

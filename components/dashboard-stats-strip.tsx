@@ -10,16 +10,16 @@ const iconMap = {
 } as const;
 
 const toneMap = {
-  blue: "bg-[#e2f2d7] text-[#47835b]",
-  green: "bg-[#d8f3dc] text-[#2f7d5b]",
-  red: "bg-[#fee2e2] text-[#b45353]",
-  amber: "bg-[#eaf6d8] text-[#6c8a24]"
+  blue: "bg-sky-50 text-sky-700",
+  green: "bg-emerald-50 text-emerald-700",
+  red: "bg-rose-50 text-rose-700",
+  amber: "bg-amber-50 text-amber-700"
 } as const;
 
 const valueToneMap = {
   blue: "text-stone-950",
-  green: "text-emerald-600",
-  red: "text-rose-600",
+  green: "text-emerald-700",
+  red: "text-rose-700",
   amber: "text-stone-950"
 } as const;
 
@@ -33,7 +33,7 @@ type Entry = {
 
 export function DashboardStatsStrip({ entries }: { entries: Entry[] }) {
   return (
-    <section className="overflow-hidden rounded-[22px] border border-[rgba(88,150,88,0.34)] bg-[rgba(250,255,247,0.92)] shadow-[0_20px_42px_-36px_rgba(22,78,43,0.20)] backdrop-blur sm:rounded-[28px]">
+    <section className="panel overflow-hidden">
       <div className="grid grid-cols-2 xl:grid-cols-5">
         {entries.map((entry, index) => {
           const Icon = iconMap[entry.icon];
@@ -42,16 +42,16 @@ export function DashboardStatsStrip({ entries }: { entries: Entry[] }) {
           return (
             <div
               key={entry.label}
-              className={`flex min-h-[76px] items-center gap-2.5 px-3 py-2.5 sm:min-h-[112px] sm:gap-4 sm:px-5 sm:py-4 ${
-                index % 2 === 1 ? "border-l border-[rgba(148,190,139,0.36)]" : ""
-              } ${index > 1 ? "border-t border-[rgba(148,190,139,0.36)]" : ""} xl:border-l xl:border-t-0 xl:border-[rgba(148,190,139,0.36)] xl:first:border-l-0`}
+              className={`flex min-h-[74px] items-center gap-3 px-3 py-3 sm:min-h-[96px] sm:px-4 ${
+                index % 2 === 1 ? "border-l border-[rgba(121,150,118,0.22)]" : ""
+              } ${index > 1 ? "border-t border-[rgba(121,150,118,0.22)]" : ""} xl:border-l xl:border-t-0 xl:border-[rgba(121,150,118,0.22)] xl:first:border-l-0`}
             >
-              <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-full sm:h-14 sm:w-14 ${toneMap[entry.tone]}`}>
-                <Icon className="h-5 w-5 sm:h-7 sm:w-7" />
+              <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${toneMap[entry.tone]}`}>
+                <Icon className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-stone-500 sm:text-[11px] sm:tracking-[0.18em]">{entry.label}</div>
-                <div className={`mt-0.5 truncate text-xl font-semibold tracking-[-0.04em] sm:mt-1 sm:text-2xl ${valueClass}`}>{rendered}</div>
+                <div className="section-title text-[10px]">{entry.label}</div>
+                <div className={`mt-1 truncate text-xl font-semibold sm:text-2xl ${valueClass}`}>{rendered}</div>
               </div>
             </div>
           );

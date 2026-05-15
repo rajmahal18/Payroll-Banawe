@@ -54,6 +54,7 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   shop         Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  payrollAuditEvents PayrollAuditEvent[]
 }
 
 model Shop {
@@ -65,6 +66,7 @@ model Shop {
   employees       Employee[]
   payrollSettings PayrollSettings[]
   payrollPeriods  PayrollPeriod[]
+  payrollAuditEvents PayrollAuditEvent[]
   noWorkDays      ShopNoWorkDay[]
 }
 
@@ -96,6 +98,7 @@ model Employee {
   bonuses           Bonus[]
   payables          Payable[]
   payrollEntries    PayrollEntry[]
+  payrollAuditEvents PayrollAuditEvent[]
 
   @@unique([shopId, employeeCode])
   @@index([shopId, status])
@@ -228,9 +231,30 @@ model PayrollPeriod {
   updatedAt      DateTime            @updatedAt
   shop           Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
   payrollEntries PayrollEntry[]
+  auditEvents    PayrollAuditEvent[]
 
   @@unique([shopId, periodStart, periodEnd])
   @@index([shopId, payDate])
+}
+
+model PayrollAuditEvent {
+  id              String         @id @default(cuid())
+  shopId          String
+  payrollPeriodId String?
+  employeeId      String?
+  userId          String?
+  eventType       String
+  reason          String?
+  metadata        Json?
+  createdAt       DateTime       @default(now())
+  shop            Shop           @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  payrollPeriod   PayrollPeriod? @relation(fields: [payrollPeriodId], references: [id], onDelete: SetNull)
+  employee        Employee?      @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  user            User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([shopId, createdAt])
+  @@index([payrollPeriodId, createdAt])
+  @@index([employeeId, createdAt])
 }
 
 model PayrollEntry {

@@ -87,8 +87,8 @@ export default async function AdvancesPage({
       />
 
       <section className="panel min-w-0 overflow-hidden">
-        <div className="px-3 py-3 sm:px-5 sm:py-4">
-          <div className="grid grid-cols-2 gap-2">
+        <div className="p-1">
+          <div className="grid grid-cols-2 gap-1">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const active = activeTab === tab.key;
@@ -98,17 +98,17 @@ export default async function AdvancesPage({
                 <Link
                   key={tab.key}
                   href={tab.key === "advances" ? "/advances" : "/advances?tab=bonuses"}
-                  className={`min-w-0 rounded-[18px] border px-3 py-2.5 transition sm:rounded-[22px] sm:px-4 sm:py-3 ${
+                  className={`min-w-0 rounded-xl border px-3 py-2.5 transition sm:px-4 sm:py-3 ${
                     active
-                      ? "border-[#bcd8bf] bg-[linear-gradient(135deg,#eff8ed_0%,#f3fbf0_60%,#edf8f6_100%)] text-stone-950 shadow-[0_18px_40px_-34px_rgba(22,78,43,0.22)]"
-                      : "border-transparent bg-white/65 text-stone-600 hover:border-[#d8e8d2] hover:bg-white/90 hover:text-stone-950"
+                      ? "border-[#bfd9c8] bg-[#e7f3e7] text-stone-950"
+                      : "border-transparent text-stone-600 hover:bg-[#f5f8f2] hover:text-stone-950"
                   }`}
                 >
                   <div className="flex items-center gap-2 sm:gap-3">
                     <span
-                      className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border sm:h-10 sm:w-10 sm:rounded-2xl ${
+                      className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${
                         active
-                          ? "border-[#cfe3c8] bg-[#eef7e9] text-[#16784f]"
+                          ? "border-[#bfd9c8] bg-white text-[#176b4d]"
                           : "border-[#e3efe0] bg-white text-stone-500"
                       }`}
                     >
@@ -121,7 +121,7 @@ export default async function AdvancesPage({
                           {count}
                         </span>
                       </div>
-                      <div className="mt-0.5 hidden truncate text-xs leading-5 text-inherit/80 sm:block">{tab.description}</div>
+                      <div className={`mt-0.5 hidden truncate text-xs leading-5 sm:block ${active ? "text-[#52665a]" : "text-stone-500"}`}>{tab.description}</div>
                     </div>
                   </div>
                 </Link>

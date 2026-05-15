@@ -66,6 +66,8 @@ export function getLivePayrollAttendanceMetrics({
   attendanceRecords: AttendanceRecordLike[];
   calendar?: WorkCalendar;
 }) {
+  // Missing work-day attendance records are intentionally paid as present.
+  // Only explicit ABSENT and HALF_DAY records reduce payroll.
   const effectiveAttendanceStart = getEffectivePayrollStart(periodStart, employee.startDate);
   const coveredAttendanceRecords = attendanceRecords.filter(
     (record) => record.date >= effectiveAttendanceStart && record.date <= endOfDayLocal(periodEnd) && isWorkDate(record.date, calendar)

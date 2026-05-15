@@ -32,9 +32,9 @@ export default async function SettingsPage({
       {params.error ? <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">Please review your settings and try again.</div> : null}
 
       <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-        <section className="panel p-5">
+        <section className="panel p-4 sm:p-5">
           <h2 className="text-lg font-semibold text-slate-950">Payroll Behavior</h2>
-          <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
+          <div className="soft-strip mt-4 p-4 text-sm text-slate-600">
             Active shop branding: <span className="font-semibold text-slate-950">{user.shop.name}</span>
           </div>
           <form action={savePayrollSettingsAction} className="mt-4 space-y-4">
@@ -47,7 +47,7 @@ export default async function SettingsPage({
                     className={`flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm ${
                       workDays.has(day)
                         ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                        : "border-stone-200 bg-stone-50 text-stone-500"
+                        : "border-stone-200 bg-white text-stone-500"
                     }`}
                   >
                     <input type="checkbox" name="workDays" value={day} defaultChecked={workDays.has(day)} className="h-4 w-4 rounded" />
@@ -57,15 +57,15 @@ export default async function SettingsPage({
               </div>
               <p className="mt-2 text-xs text-slate-500">Uncheck days when the shop is always closed, like Sunday.</p>
             </div>
-            <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
               <input type="checkbox" name="autoGenerate" defaultChecked={settings?.autoGenerate ?? true} className="h-4 w-4 rounded border-slate-300" />
               Allow payroll periods to be created automatically when payroll is generated.
             </label>
-            <button className="rounded-2xl bg-[#2f7d5b] px-4 py-3 text-sm font-semibold text-white hover:bg-[#25684b]">Save Settings</button>
+            <button className="primary-action">Save Settings</button>
           </form>
         </section>
 
-        <section className="panel p-5">
+        <section className="panel p-4 sm:p-5">
           <h2 className="text-lg font-semibold text-slate-950">No-work Days</h2>
           <p className="mt-1 text-sm text-slate-600">Add one-off holidays or closure dates. These are skipped in payroll day counts.</p>
           <form action={addNoWorkDayAction} className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
@@ -77,18 +77,18 @@ export default async function SettingsPage({
               <label className="mb-1 block text-sm font-medium text-slate-700">Reason</label>
               <input name="reason" placeholder="Holiday / shop closed" />
             </div>
-            <button className="self-end rounded-2xl bg-[#2f7d5b] px-4 py-3 text-sm font-semibold text-white hover:bg-[#25684b]">
+            <button className="primary-action self-end">
               Add
             </button>
           </form>
 
-          <div className="mt-4 divide-y divide-[rgba(148,190,139,0.28)] overflow-hidden rounded-[22px] border border-[rgba(88,150,88,0.28)] bg-white/70">
+          <div className="mt-4 divide-y divide-[rgba(121,150,118,0.22)] overflow-hidden rounded-2xl border border-[rgba(121,150,118,0.24)] bg-white">
             {noWorkDays.length ? (
               noWorkDays.map((day) => (
                 <div key={day.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
                   <div className="min-w-0">
                     <div className="font-semibold text-stone-950">{formatDate(day.date)}</div>
-                    <div className="truncate text-xs text-stone-500">{day.reason || "No reason added"} · {toDateInputValue(day.date)}</div>
+                    <div className="truncate text-xs text-stone-500">{day.reason || "No reason added"} / {toDateInputValue(day.date)}</div>
                   </div>
                   <form action={deleteNoWorkDayAction}>
                     <input type="hidden" name="noWorkDayId" value={day.id} />
