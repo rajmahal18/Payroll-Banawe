@@ -92,6 +92,7 @@ model Employee {
   shop              Shop               @relation(fields: [shopId], references: [id], onDelete: Cascade)
   attendanceRecords AttendanceRecord[]
   advances          Advance[]
+  advanceDeductions AdvanceDeduction[]
   bonuses           Bonus[]
   payables          Payable[]
   payrollEntries    PayrollEntry[]
@@ -127,8 +128,30 @@ model Advance {
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
   employee         Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  deductions       AdvanceDeduction[]
 
   @@index([date])
+}
+
+model AdvanceDeduction {
+  id                 String       @id @default(cuid())
+  advanceId          String?
+  payrollEntryId     String
+  employeeId         String
+  payDate            DateTime
+  amount             Decimal      @db.Decimal(10, 2)
+  balanceBefore      Decimal      @db.Decimal(10, 2)
+  balanceAfter       Decimal      @db.Decimal(10, 2)
+  advanceDate        DateTime
+  advanceReason      String?
+  createdAt          DateTime     @default(now())
+  advance            Advance?     @relation(fields: [advanceId], references: [id], onDelete: SetNull)
+  payrollEntry       PayrollEntry @relation(fields: [payrollEntryId], references: [id], onDelete: Cascade)
+  employee           Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([advanceId])
+  @@index([employeeId, payDate])
+  @@index([payrollEntryId])
 }
 
 model Bonus {
@@ -227,6 +250,7 @@ model PayrollEntry {
   updatedAt              DateTime      @updatedAt
   payrollPeriod          PayrollPeriod @relation(fields: [payrollPeriodId], references: [id], onDelete: Cascade)
   employee               Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  advanceDeductions      AdvanceDeduction[]
 
   @@unique([payrollPeriodId, employeeId])
 }

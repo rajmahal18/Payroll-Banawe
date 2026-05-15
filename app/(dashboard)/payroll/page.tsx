@@ -29,6 +29,23 @@ type PayrollHistoryRow = {
   grossTotal: number;
   additions: number;
   deductions: number;
+  employeeBreakdowns: Array<{
+    employeeId: string;
+    employeeName: string;
+    grossPay: number;
+    additions: number;
+    advanceDeductionsTotal: number;
+    otherDeductions: number;
+    netPay: number;
+    advanceDeductions: Array<{
+      id: string;
+      advanceDate: Date;
+      advanceReason: string | null;
+      amount: number;
+      balanceBefore: number;
+      balanceAfter: number;
+    }>;
+  }>;
 };
 
 function getPage(value: string | undefined) {
@@ -83,11 +100,23 @@ export default async function PayrollPage({
       include: {
         payrollEntries: {
           select: {
+            id: true,
             netPay: true,
             grossPay: true,
             totalBonusesAdded: true,
             totalAdvancesDeducted: true,
             totalPayablesDeducted: true,
+            advanceDeductions: {
+              select: {
+                id: true,
+                advanceDate: true,
+                advanceReason: true,
+                amount: true,
+                balanceBefore: true,
+                balanceAfter: true
+              },
+              orderBy: [{ advanceDate: "asc" }, { createdAt: "asc" }]
+            },
             employee: {
               select: {
                 id: true,
@@ -170,7 +199,8 @@ export default async function PayrollPage({
           netTotal: 0,
           grossTotal: 0,
           additions: 0,
-          deductions: 0
+          deductions: 0,
+          employeeBreakdowns: []
         };
 
         existing.employeeIds.push(employee.id);
@@ -195,6 +225,23 @@ export default async function PayrollPage({
       (total, entry) => total + Number(entry.totalAdvancesDeducted) + Number(entry.totalPayablesDeducted),
       0
     );
+    const employeeBreakdowns = period.payrollEntries.map((entry) => ({
+      employeeId: entry.employee.id,
+      employeeName: entry.employee.fullName,
+      grossPay: Number(entry.grossPay),
+      additions: Number(entry.totalBonusesAdded),
+      advanceDeductionsTotal: Number(entry.totalAdvancesDeducted),
+      otherDeductions: Number(entry.totalPayablesDeducted),
+      netPay: Number(entry.netPay),
+      advanceDeductions: entry.advanceDeductions.map((deduction) => ({
+        id: deduction.id,
+        advanceDate: deduction.advanceDate,
+        advanceReason: deduction.advanceReason,
+        amount: Number(deduction.amount),
+        balanceBefore: Number(deduction.balanceBefore),
+        balanceAfter: Number(deduction.balanceAfter)
+      }))
+    }));
 
     return {
       id: period.id,
@@ -209,7 +256,8 @@ export default async function PayrollPage({
       netTotal,
       grossTotal,
       additions,
-      deductions
+      deductions,
+      employeeBreakdowns
     };
   });
   const historyRows = [...persistedRows, ...Array.from(unrecordedRowsByPeriod.values())].sort(rowSort);
@@ -380,6 +428,58 @@ export default async function PayrollPage({
                         </div>
                       </div>
                       <div className="mt-3 text-xs leading-5 text-[#7a7168]">{period.employeeNames.join(", ")}</div>
+                      {period.employeeBreakdowns.length ? (
+                        <div className="mt-4 overflow-hidden rounded-[20px] border border-[rgba(148,190,139,0.28)] bg-[rgba(250,255,247,0.72)]">
+                          <div className="border-b border-[rgba(148,190,139,0.22)] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#2f6f45]">
+                            Employee Deduction Lookback
+                          </div>
+                          <div className="divide-y divide-[rgba(148,190,139,0.20)]">
+                            {period.employeeBreakdowns.map((employee) => (
+                              <div key={employee.employeeId} className="px-3 py-3">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                  <div className="min-w-0">
+                                    <div className="font-semibold text-stone-950">{employee.employeeName}</div>
+                                    <div className="mt-1 text-xs text-[#7a7168]">
+                                      Gross {formatMoney(employee.grossPay)} / +{formatMoney(employee.additions)} / advances -{formatMoney(employee.advanceDeductionsTotal)} / other -{formatMoney(employee.otherDeductions)}
+                                    </div>
+                                  </div>
+                                  <div className="shrink-0 text-sm font-semibold text-[#2d6258]">Net {formatMoney(employee.netPay)}</div>
+                                </div>
+
+                                {employee.advanceDeductions.length ? (
+                                  <div className="mt-3 grid gap-2">
+                                    {employee.advanceDeductions.map((deduction) => (
+                                      <div
+                                        key={deduction.id}
+                                        className="grid gap-2 rounded-[16px] border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs sm:grid-cols-[1fr_auto]"
+                                      >
+                                        <div className="min-w-0">
+                                          <div className="font-semibold text-stone-950">
+                                            Advance from {formatDate(deduction.advanceDate)}
+                                          </div>
+                                          <div className="mt-1 text-[#7a7168]">{deduction.advanceReason || "No reason added"}</div>
+                                        </div>
+                                        <div className="sm:text-right">
+                                          <div className="font-semibold text-[#9a5b05]">-{formatMoney(deduction.amount)}</div>
+                                          <div className="mt-1 text-[#7a7168]">
+                                            {formatMoney(deduction.balanceBefore)} to {formatMoney(deduction.balanceAfter)}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : employee.advanceDeductionsTotal > 0 ? (
+                                  <div className="mt-3 rounded-[16px] border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-700">
+                                    This payroll has an advance deduction total, but no per-advance audit rows. It was likely recorded before deduction lookback was added.
+                                  </div>
+                                ) : (
+                                  <div className="mt-3 text-xs text-[#7a7168]">No advance deductions for this employee in this payroll.</div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
                       {canPay ? (
                         <form action={markPayrollHistoryPaidAction} className="mt-4">
                           <input type="hidden" name="payDate" value={toDateInputValue(period.payDate)} />

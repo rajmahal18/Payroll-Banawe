@@ -55,6 +55,17 @@ function getAdvanceDeductionForPayroll({
   return cappedBalance;
 }
 
+type AdvanceDeductionSnapshot = {
+  advanceId: string;
+  employeeId: string;
+  payDate: Date;
+  amount: Prisma.Decimal;
+  balanceBefore: Prisma.Decimal;
+  balanceAfter: Prisma.Decimal;
+  advanceDate: Date;
+  advanceReason: string | null;
+};
+
 function formatPeriodLabel(periodStart: Date, periodEnd: Date, payDate: Date) {
   if (toDateInputValue(periodStart) === toDateInputValue(periodEnd)) {
     return formatDate(payDate);
@@ -455,6 +466,7 @@ async function ensurePayrollPeriodsForDate({
       let runningNet = grossPay.plus(bonusTotal);
       let deductedAdvanceTotal = new Prisma.Decimal(0);
       let deductedPayableTotal = new Prisma.Decimal(0);
+      const advanceDeductionSnapshots: AdvanceDeductionSnapshot[] = [];
 
       for (const bonus of bonuses) {
         await tx.bonus.update({
@@ -476,6 +488,16 @@ async function ensurePayrollPeriodsForDate({
           runningNet = runningNet.minus(deduction);
           deductedAdvanceTotal = deductedAdvanceTotal.plus(deduction);
           const newRemaining = advance.remainingBalance.minus(deduction);
+          advanceDeductionSnapshots.push({
+            advanceId: advance.id,
+            employeeId: employee.id,
+            payDate: period.payDate,
+            amount: deduction,
+            balanceBefore: advance.remainingBalance,
+            balanceAfter: newRemaining,
+            advanceDate: advance.date,
+            advanceReason: advance.reason
+          });
           await tx.advance.update({
             where: { id: advance.id },
             data: {
@@ -505,7 +527,7 @@ async function ensurePayrollPeriodsForDate({
         }
       }
 
-      await tx.payrollEntry.create({
+      const payrollEntry = await tx.payrollEntry.create({
         data: {
           payrollPeriodId: payrollPeriod.id,
           employeeId: employee.id,
@@ -519,6 +541,15 @@ async function ensurePayrollPeriodsForDate({
           netPay: runningNet
         } as never
       });
+
+      if (advanceDeductionSnapshots.length) {
+        await tx.advanceDeduction.createMany({
+          data: advanceDeductionSnapshots.map((snapshot) => ({
+            ...snapshot,
+            payrollEntryId: payrollEntry.id
+          }))
+        });
+      }
     }
   });
 
@@ -1633,6 +1664,7 @@ export async function markPayrollHistoryPaidAction(formData: FormData) {
       let runningNet = grossPay.plus(bonusTotal);
       let deductedAdvanceTotal = new Prisma.Decimal(0);
       let deductedPayableTotal = new Prisma.Decimal(0);
+      const advanceDeductionSnapshots: AdvanceDeductionSnapshot[] = [];
 
       for (const bonus of bonuses) {
         await tx.bonus.update({
@@ -1652,6 +1684,16 @@ export async function markPayrollHistoryPaidAction(formData: FormData) {
           runningNet = runningNet.minus(deduction);
           deductedAdvanceTotal = deductedAdvanceTotal.plus(deduction);
           const newRemaining = advance.remainingBalance.minus(deduction);
+          advanceDeductionSnapshots.push({
+            advanceId: advance.id,
+            employeeId: employee.id,
+            payDate,
+            amount: deduction,
+            balanceBefore: advance.remainingBalance,
+            balanceAfter: newRemaining,
+            advanceDate: advance.date,
+            advanceReason: advance.reason
+          });
           await tx.advance.update({
             where: { id: advance.id },
             data: {
@@ -1681,7 +1723,7 @@ export async function markPayrollHistoryPaidAction(formData: FormData) {
         }
       }
 
-      await tx.payrollEntry.create({
+      const payrollEntry = await tx.payrollEntry.create({
         data: {
           payrollPeriodId: upserted.id,
           employeeId: employee.id,
@@ -1695,6 +1737,15 @@ export async function markPayrollHistoryPaidAction(formData: FormData) {
           netPay: runningNet
         } as never
       });
+
+      if (advanceDeductionSnapshots.length) {
+        await tx.advanceDeduction.createMany({
+          data: advanceDeductionSnapshots.map((snapshot) => ({
+            ...snapshot,
+            payrollEntryId: payrollEntry.id
+          }))
+        });
+      }
     }
 
     await tx.payrollPeriod.update({
