@@ -261,7 +261,7 @@ export function AdvanceActivityCalendar({ events, employees, totals }: AdvanceAc
           <div className="mt-4 overflow-hidden rounded-2xl border border-[rgba(121,150,118,0.24)]">
             <div className="grid grid-cols-7 bg-[#f1f6ee]">
               {["S", "M", "T", "W", "T", "F", "S"].map((day, index) => (
-                <div key={`${day}-${index}`} className="py-2 text-center text-[10px] font-semibold text-[#66746a] sm:text-[11px]">{day}</div>
+                <div key={`${day}-${index}`} className="py-2.5 text-center text-[10px] font-semibold text-[#66746a] lg:text-[11px]">{day}</div>
               ))}
             </div>
             <div className="grid grid-cols-7">
@@ -277,25 +277,25 @@ export function AdvanceActivityCalendar({ events, employees, totals }: AdvanceAc
                     key={key}
                     type="button"
                     onClick={() => setSelectedDate(key)}
-                    className={`min-w-0 border-t px-1 py-1.5 text-left sm:min-h-[74px] sm:px-2 sm:py-2 ${index % 7 !== 6 ? "border-r" : ""} ${
-                      selected ? "bg-[#fff5d8]" : inMonth ? "bg-white hover:bg-[#f8fbf6]" : "bg-stone-50/70 text-stone-400 hover:bg-stone-50"
+                    className={`relative min-h-[54px] min-w-0 border-t px-1 py-1.5 text-left lg:min-h-[82px] lg:px-2 lg:py-2 ${index % 7 !== 6 ? "border-r" : ""} ${
+                      selected ? "bg-[#fff7df] ring-2 ring-inset ring-amber-300" : inMonth ? "bg-white hover:bg-[#f8fbf6]" : "bg-stone-50/70 text-stone-400 hover:bg-stone-50"
                     }`}
                   >
-                    <div className={`text-[11px] font-semibold sm:text-sm ${inMonth ? "text-stone-800" : "text-stone-400"}`}>{date.getDate()}</div>
-                    <div className="mt-1 flex flex-wrap gap-1 sm:block sm:space-y-1">
-                      {issued > 0 ? <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 sm:h-auto sm:w-auto sm:truncate sm:rounded-md sm:bg-emerald-50 sm:px-1.5 sm:py-0.5 sm:text-[9px] sm:font-semibold sm:text-emerald-700">+{formatMoney(issued)}</div> : null}
-                      {deducted > 0 ? <div className="h-1.5 w-1.5 rounded-full bg-amber-500 sm:h-auto sm:w-auto sm:truncate sm:rounded-md sm:bg-amber-50 sm:px-1.5 sm:py-0.5 sm:text-[9px] sm:font-semibold sm:text-amber-700">-{formatMoney(deducted)}</div> : null}
-                      {suggested > 0 ? <div className="h-1.5 w-1.5 rounded-full bg-sky-400 ring-2 ring-sky-100 sm:h-auto sm:w-auto sm:truncate sm:rounded-md sm:border sm:border-dashed sm:border-sky-300 sm:bg-sky-50 sm:px-1.5 sm:py-0.5 sm:text-[9px] sm:font-semibold sm:text-sky-700 sm:ring-0">{formatMoney(suggested)} guide</div> : null}
+                    <div className={`text-[11px] font-semibold lg:text-sm ${inMonth ? "text-stone-800" : "text-stone-400"}`}>{date.getDate()}</div>
+                    <div className="absolute inset-x-1 bottom-2 flex items-center justify-center gap-1 lg:static lg:mt-2 lg:block lg:space-y-1">
+                      {issued > 0 ? <div className="h-2 w-2 overflow-hidden rounded-full bg-emerald-500 text-[0] lg:h-auto lg:w-auto lg:truncate lg:rounded-md lg:bg-emerald-50 lg:px-1.5 lg:py-0.5 lg:text-[9px] lg:font-semibold lg:text-emerald-700">+{formatMoney(issued)}</div> : null}
+                      {deducted > 0 ? <div className="h-2 w-2 overflow-hidden rounded-full bg-amber-500 text-[0] lg:h-auto lg:w-auto lg:truncate lg:rounded-md lg:bg-amber-50 lg:px-1.5 lg:py-0.5 lg:text-[9px] lg:font-semibold lg:text-amber-700">-{formatMoney(deducted)}</div> : null}
+                      {suggested > 0 ? <div className="h-2 w-2 overflow-hidden rounded-full bg-sky-400 text-[0] ring-2 ring-sky-100 lg:h-auto lg:w-auto lg:truncate lg:rounded-md lg:border lg:border-dashed lg:border-sky-300 lg:bg-sky-50 lg:px-1.5 lg:py-0.5 lg:text-[9px] lg:font-semibold lg:text-sky-700 lg:ring-0">{formatMoney(suggested)} guide</div> : null}
                     </div>
                   </button>
                 );
               })}
             </div>
           </div>
-          <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-stone-500">
+          <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-[11px] text-stone-500 sm:flex sm:flex-wrap sm:items-center sm:gap-4 sm:text-xs">
             <span className="inline-flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Advance issued</span>
             <span className="inline-flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-amber-500" /> Payroll deduction</span>
-            <span className="inline-flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-sky-400 ring-2 ring-sky-100" /> Suggested repayment guide</span>
+            <span className="col-span-2 inline-flex items-center gap-2 sm:col-span-1"><span className="h-2 w-2 rounded-full bg-sky-400 ring-2 ring-sky-100" /> Suggested repayment guide</span>
           </div>
         </div>
 
