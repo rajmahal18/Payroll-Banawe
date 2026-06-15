@@ -1,12 +1,15 @@
 import Link from "next/link";
 import { CircleDollarSign, Gift } from "lucide-react";
 import { createAdvanceAction, createBonusAction } from "@/app/actions";
+import { AdvanceActivityCalendar } from "@/components/advance-activity-calendar";
 import { AdvanceManager } from "@/components/advance-manager";
 import { BonusManager } from "@/components/bonus-manager";
 import { PageHeader } from "@/components/page-header";
+import { projectAdvanceDeductions } from "@/lib/advance-projections";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { toDateInputValue } from "@/lib/utils";
+import { getShopWorkCalendar } from "@/lib/work-schedule";
 
 const tabs = [
   {
@@ -38,22 +41,44 @@ export default async function AdvancesPage({
     orderBy: { fullName: "asc" }
   });
   const employeeIds = employees.map((employee) => employee.id);
-  const [advances, bonuses] = await Promise.all([
+  const [advances, bonuses, advanceDeductions, workCalendar] = await Promise.all([
     prisma.advance.findMany({
       where: { employeeId: { in: employeeIds } },
-      include: { employee: true },
+      include: {
+        employee: {
+          select: {
+            id: true,
+            fullName: true,
+            payrollFrequency: true,
+            weeklyPayDay: true,
+            monthlyPayDay: true,
+            twiceMonthlyDayOne: true,
+            twiceMonthlyDayTwo: true,
+            everyNDays: true,
+            startDate: true,
+            lastPaidDate: true
+          }
+        }
+      },
       orderBy: [{ status: "asc" }, { date: "desc" }]
     }),
     prisma.bonus.findMany({
       where: { employeeId: { in: employeeIds } },
-      include: { employee: true },
+      include: { employee: { select: { fullName: true } } },
       orderBy: [{ status: "asc" }, { date: "desc" }]
-    })
+    }),
+    prisma.advanceDeduction.findMany({
+      where: { employeeId: { in: employeeIds } },
+      include: { employee: { select: { fullName: true } } },
+      orderBy: [{ payDate: "desc" }, { createdAt: "desc" }]
+    }),
+    getShopWorkCalendar(user.shop.id)
   ]);
 
   const employeeOptions = employees.map((employee) => ({
     id: employee.id,
-    fullName: employee.fullName
+    fullName: employee.fullName,
+    photoDataUrl: employee.photoDataUrl
   }));
 
   const advanceItems = advances.map((advance) => ({
@@ -78,6 +103,63 @@ export default async function AdvancesPage({
     status: bonus.status,
     reason: bonus.reason ?? ""
   }));
+  const projectedAdvanceDeductions = projectAdvanceDeductions(
+    advances.filter((advance) => advance.status === "OPEN" && advance.remainingBalance.greaterThan(0)),
+    workCalendar
+  );
+  const advanceActivityEvents = [
+    ...advances.map((advance) => ({
+      id: `advance-${advance.id}`,
+      date: toDateInputValue(advance.date),
+      employeeId: advance.employeeId,
+      employeeName: advance.employee.fullName,
+      type: "ADVANCE" as const,
+      amount: advance.amount.toString(),
+      reason: advance.reason ?? "",
+      balanceBefore: null,
+      balanceAfter: advance.remainingBalance.toString(),
+      currentDeductedAmount: advance.deductedAmount.toString(),
+      currentRemainingBalance: advance.remainingBalance.toString(),
+      status: advance.status
+    })),
+    ...advanceDeductions.map((deduction) => ({
+      id: `deduction-${deduction.id}`,
+      date: toDateInputValue(deduction.payDate),
+      employeeId: deduction.employeeId,
+      employeeName: deduction.employee.fullName,
+      type: "DEDUCTION" as const,
+      amount: deduction.amount.toString(),
+      reason: deduction.advanceReason ?? "",
+      balanceBefore: deduction.balanceBefore.toString(),
+      balanceAfter: deduction.balanceAfter.toString(),
+      currentDeductedAmount: null,
+      currentRemainingBalance: null,
+      status: null
+    })),
+    ...projectedAdvanceDeductions.map((deduction) => ({
+      id: deduction.id,
+      date: toDateInputValue(deduction.date),
+      employeeId: deduction.employeeId,
+      employeeName: deduction.employeeName,
+      type: "SUGGESTED_DEDUCTION" as const,
+      amount: deduction.amount.toString(),
+      reason: deduction.reason,
+      balanceBefore: deduction.balanceBefore.toString(),
+      balanceAfter: deduction.balanceAfter.toString(),
+      currentDeductedAmount: null,
+      currentRemainingBalance: null,
+      status: null
+    }))
+  ].sort((left, right) => right.date.localeCompare(left.date));
+  const advanceTotals = {
+    issued: advances
+      .filter((advance) => advance.status !== "CANCELLED")
+      .reduce((total, advance) => total + Number(advance.amount), 0)
+      .toString(),
+    deducted: advances.reduce((total, advance) => total + Number(advance.deductedAmount), 0).toString(),
+    outstanding: advances.reduce((total, advance) => total + Number(advance.remainingBalance), 0).toString(),
+    auditedDeductions: advanceDeductions.reduce((total, deduction) => total + Number(deduction.amount), 0).toString()
+  };
 
   return (
     <div>
@@ -134,6 +216,9 @@ export default async function AdvancesPage({
       <div className="mt-3 grid min-w-0 gap-4 xl:grid-cols-[0.92fr_1.08fr]">
         {activeTab === "advances" ? (
           <>
+            <div className="min-w-0 xl:col-span-2">
+              <AdvanceActivityCalendar events={advanceActivityEvents} employees={employeeOptions} totals={advanceTotals} />
+            </div>
             <section className="panel min-w-0 p-4 sm:p-5">
               <div className="flex items-start gap-3">
                 <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#e2f2d9] text-[#2f7d5b]">
