@@ -37,11 +37,13 @@ export default async function AdvancesPage({
   const activeTab: TabKey = params.tab === "bonuses" ? "bonuses" : "advances";
   const user = await requireUser();
   const employees = await prisma.employee.findMany({
-    where: { shopId: user.shop.id, status: "ACTIVE" },
+    where: { shopId: user.shop.id },
     orderBy: { fullName: "asc" }
   });
   const employeeIds = employees.map((employee) => employee.id);
-  const [advances, bonuses, advanceDeductions, workCalendar] = await Promise.all([
+  const activeEmployees = employees.filter((employee) => employee.status === "ACTIVE");
+  const activeEmployeeIds = activeEmployees.map((employee) => employee.id);
+  const [advances, bonuses, advanceDeductions, paidPayrollEntries, workCalendar] = await Promise.all([
     prisma.advance.findMany({
       where: { employeeId: { in: employeeIds } },
       include: {
@@ -63,7 +65,7 @@ export default async function AdvancesPage({
       orderBy: [{ status: "asc" }, { date: "desc" }]
     }),
     prisma.bonus.findMany({
-      where: { employeeId: { in: employeeIds } },
+      where: { employeeId: { in: activeEmployeeIds } },
       include: { employee: { select: { fullName: true } } },
       orderBy: [{ status: "asc" }, { date: "desc" }]
     }),
@@ -71,6 +73,17 @@ export default async function AdvancesPage({
       where: { employeeId: { in: employeeIds } },
       include: { employee: { select: { fullName: true } } },
       orderBy: [{ payDate: "desc" }, { createdAt: "desc" }]
+    }),
+    prisma.payrollEntry.findMany({
+      where: {
+        employeeId: { in: employeeIds },
+        payrollPeriod: { status: "PAID" }
+      },
+      select: {
+        employeeId: true,
+        payrollPeriod: { select: { payDate: true } }
+      },
+      orderBy: { payrollPeriod: { payDate: "desc" } }
     }),
     getShopWorkCalendar(user.shop.id)
   ]);
@@ -80,6 +93,14 @@ export default async function AdvancesPage({
     fullName: employee.fullName,
     photoDataUrl: employee.photoDataUrl
   }));
+
+  const deductionsByAdvanceId = new Map<string, typeof advanceDeductions>();
+  advanceDeductions.forEach((deduction) => {
+    if (!deduction.advanceId) return;
+    const existing = deductionsByAdvanceId.get(deduction.advanceId) ?? [];
+    existing.push(deduction);
+    deductionsByAdvanceId.set(deduction.advanceId, existing);
+  });
 
   const advanceItems = advances.map((advance) => ({
     id: advance.id,
@@ -91,7 +112,14 @@ export default async function AdvancesPage({
     deductedAmount: advance.deductedAmount.toString(),
     remainingBalance: advance.remainingBalance.toString(),
     status: advance.status,
-    reason: advance.reason ?? ""
+    reason: advance.reason ?? "",
+    deductions: (deductionsByAdvanceId.get(advance.id) ?? []).map((deduction) => ({
+      id: deduction.id,
+      payDate: toDateInputValue(deduction.payDate),
+      amount: deduction.amount.toString(),
+      balanceBefore: deduction.balanceBefore.toString(),
+      balanceAfter: deduction.balanceAfter.toString()
+    }))
   }));
 
   const bonusItems = bonuses.map((bonus) => ({
@@ -103,10 +131,38 @@ export default async function AdvancesPage({
     status: bonus.status,
     reason: bonus.reason ?? ""
   }));
+  const latestPaidDateByEmployee = new Map<string, Date>();
+  paidPayrollEntries.forEach((entry) => {
+    if (!latestPaidDateByEmployee.has(entry.employeeId)) {
+      latestPaidDateByEmployee.set(entry.employeeId, entry.payrollPeriod.payDate);
+    }
+  });
   const projectedAdvanceDeductions = projectAdvanceDeductions(
-    advances.filter((advance) => advance.status === "OPEN" && advance.remainingBalance.greaterThan(0)),
+    advances
+      .filter((advance) => advance.status === "OPEN" && advance.remainingBalance.greaterThan(0))
+      .map((advance) => {
+        const persistedPaidDate = latestPaidDateByEmployee.get(advance.employeeId);
+        const lastPaidDate =
+          persistedPaidDate && (!advance.employee.lastPaidDate || persistedPaidDate > advance.employee.lastPaidDate)
+            ? persistedPaidDate
+            : advance.employee.lastPaidDate;
+        return { ...advance, employee: { ...advance.employee, lastPaidDate } };
+      }),
     workCalendar
   );
+  const auditedDeductionByAdvance = new Map<string, number>();
+  advanceDeductions.forEach((deduction) => {
+    if (!deduction.advanceId) return;
+    auditedDeductionByAdvance.set(
+      deduction.advanceId,
+      (auditedDeductionByAdvance.get(deduction.advanceId) ?? 0) + Number(deduction.amount)
+    );
+  });
+  const legacyDeductionEmployeeIds = Array.from(new Set(
+    advances
+      .filter((advance) => Number(advance.deductedAmount) > (auditedDeductionByAdvance.get(advance.id) ?? 0))
+      .map((advance) => advance.employeeId)
+  ));
   const advanceActivityEvents = [
     ...advances.map((advance) => ({
       id: `advance-${advance.id}`,
@@ -217,7 +273,7 @@ export default async function AdvancesPage({
         {activeTab === "advances" ? (
           <>
             <div className="min-w-0 xl:col-span-2">
-              <AdvanceActivityCalendar events={advanceActivityEvents} employees={employeeOptions} totals={advanceTotals} />
+              <AdvanceActivityCalendar events={advanceActivityEvents} employees={employeeOptions} totals={advanceTotals} legacyDeductionEmployeeIds={legacyDeductionEmployeeIds} />
             </div>
             <section className="panel min-w-0 p-4 sm:p-5">
               <div className="flex items-start gap-3">
@@ -235,7 +291,7 @@ export default async function AdvancesPage({
                   <label className="mb-1 block text-sm font-medium text-slate-700">Employee</label>
                   <select name="employeeId" required>
                     <option value="">Select employee</option>
-                    {employees.map((employee) => (
+                    {activeEmployees.map((employee) => (
                       <option key={employee.id} value={employee.id}>{employee.fullName}</option>
                     ))}
                   </select>
@@ -285,7 +341,7 @@ export default async function AdvancesPage({
                   <label className="mb-1 block text-sm font-medium text-slate-700">Employee</label>
                   <select name="employeeId" required>
                     <option value="">Select employee</option>
-                    {employees.map((employee) => (
+                    {activeEmployees.map((employee) => (
                       <option key={employee.id} value={employee.id}>{employee.fullName}</option>
                     ))}
                   </select>

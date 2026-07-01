@@ -22,6 +22,7 @@ export type AdvanceActivityEvent = {
 type AdvanceActivityCalendarProps = {
   events: AdvanceActivityEvent[];
   employees: Array<{ id: string; fullName: string; photoDataUrl: string | null }>;
+  legacyDeductionEmployeeIds: string[];
   totals: {
     issued: string;
     deducted: string;
@@ -59,7 +60,7 @@ function EmployeeAvatar({ name, photoDataUrl, size = "md" }: { name: string; pho
   );
 }
 
-export function AdvanceActivityCalendar({ events, employees, totals }: AdvanceActivityCalendarProps) {
+export function AdvanceActivityCalendar({ events, employees, totals, legacyDeductionEmployeeIds }: AdvanceActivityCalendarProps) {
   const todayKey = toDateInputValue(new Date());
   const nearestSuggestedDate = events
     .filter((event) => event.type === "SUGGESTED_DEDUCTION" && event.date >= todayKey)
@@ -141,7 +142,8 @@ export function AdvanceActivityCalendar({ events, employees, totals }: AdvanceAc
   const selectedSuggested = selectedEvents
     .filter((event) => event.type === "SUGGESTED_DEDUCTION")
     .reduce((sum, event) => sum + Number(event.amount), 0);
-  const hasLegacyDeductions = employeeId === "all" && Number(totals.deducted) > Number(totals.auditedDeductions);
+  const hasLegacyDeductions =
+    employeeId === "all" ? legacyDeductionEmployeeIds.length > 0 : legacyDeductionEmployeeIds.includes(employeeId);
 
   useEffect(() => {
     if (!pickerOpen) return;

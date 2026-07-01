@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronRight, X } from "lucide-react";
+import { CalendarDays, ChevronRight, CircleDollarSign, X } from "lucide-react";
 import { deleteAdvanceAction, updateAdvanceAction } from "@/app/actions";
-import { formatMoney } from "@/lib/utils";
+import { formatDate, formatMoney } from "@/lib/utils";
 
 type EmployeeOption = {
   id: string;
@@ -22,6 +22,15 @@ type AdvanceItem = {
   remainingBalance: string;
   status: "OPEN" | "CLOSED" | "CANCELLED";
   reason: string;
+  deductions: AdvanceDeductionItem[];
+};
+
+type AdvanceDeductionItem = {
+  id: string;
+  payDate: string;
+  amount: string;
+  balanceBefore: string;
+  balanceAfter: string;
 };
 
 const PAGE_SIZE = 10;
@@ -58,6 +67,10 @@ export function AdvanceManager({ advances, employees }: { advances: AdvanceItem[
       : status === "CLOSED"
         ? "bg-stone-100 text-stone-600"
         : "bg-rose-50 text-rose-700";
+  const getLegacyDeductedAmount = (advance: AdvanceItem) => {
+    const auditedAmount = advance.deductions.reduce((total, deduction) => total + Number(deduction.amount), 0);
+    return Math.max(Number(advance.deductedAmount) - auditedAmount, 0);
+  };
 
   return (
     <>
@@ -190,6 +203,62 @@ export function AdvanceManager({ advances, employees }: { advances: AdvanceItem[
                     <div className="soft-strip p-3 text-sm text-stone-600">
                       Already deducted: <b>{formatMoney(selected.deductedAmount)}</b>. Remaining balance is recalculated after saving.
                     </div>
+                    <section className="rounded-2xl border border-[rgba(121,150,118,0.18)] bg-[#fbfcf8] p-3 sm:p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7a8b74]">History</div>
+                          <h4 className="mt-1 text-base font-semibold text-stone-950">Advance timeline</h4>
+                        </div>
+                        <div className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#176b4d] shadow-sm shadow-stone-900/5">
+                          {selected.deductions.length} deduction{selected.deductions.length === 1 ? "" : "s"}
+                        </div>
+                      </div>
+                      <div className="mt-4 space-y-3">
+                        <div className="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-3">
+                          <span className="grid h-9 w-9 place-items-center rounded-full bg-emerald-50 text-emerald-700">
+                            <CalendarDays className="h-4 w-4" />
+                          </span>
+                          <div className="min-w-0 border-b border-[rgba(121,150,118,0.16)] pb-3">
+                            <div className="flex flex-wrap items-baseline justify-between gap-2">
+                              <div className="font-semibold text-stone-950">Started {formatDate(selected.date)}</div>
+                              <div className="text-sm font-semibold text-emerald-700">+{formatMoney(selected.amount)}</div>
+                            </div>
+                            <div className="mt-1 text-sm text-stone-600">
+                              {selected.reason || "No reason added"}
+                            </div>
+                          </div>
+                        </div>
+
+                        {selected.deductions.length ? (
+                          selected.deductions.map((deduction) => (
+                            <div key={deduction.id} className="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-3">
+                              <span className="grid h-9 w-9 place-items-center rounded-full bg-amber-50 text-amber-700">
+                                <CircleDollarSign className="h-4 w-4" />
+                              </span>
+                              <div className="min-w-0 border-b border-[rgba(121,150,118,0.16)] pb-3 last:border-b-0 last:pb-0">
+                                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                                  <div className="font-semibold text-stone-950">{formatDate(deduction.payDate)}</div>
+                                  <div className="text-sm font-semibold text-[#9a5b05]">-{formatMoney(deduction.amount)}</div>
+                                </div>
+                                <div className="mt-1 text-sm text-stone-600">
+                                  Balance {formatMoney(deduction.balanceBefore)} to {formatMoney(deduction.balanceAfter)}
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="rounded-xl bg-white px-3 py-3 text-sm text-stone-600 shadow-sm shadow-stone-900/5">
+                            No payroll deductions recorded yet.
+                          </div>
+                        )}
+
+                        {getLegacyDeductedAmount(selected) > 0 ? (
+                          <div className="rounded-xl bg-white px-3 py-3 text-sm text-stone-600 shadow-sm shadow-stone-900/5">
+                            {formatMoney(getLegacyDeductedAmount(selected))} was already deducted before detailed payroll history was available.
+                          </div>
+                        ) : null}
+                      </div>
+                    </section>
                     <div>
                       <label className="mb-1 block text-sm font-medium text-stone-700">Reason</label>
                       <textarea name="reason" rows={3} defaultValue={selected.reason} placeholder="Optional reason" />
